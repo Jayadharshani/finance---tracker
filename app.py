@@ -21,7 +21,13 @@ with st.sidebar:
     with st.form("add_expense"):
         exp_date = st.date_input("Date", datetime.now())
         exp_category = st.selectbox("Category", ["Food", "Transport", "Shopping", "Entertainment", "Bills", "Education", "Health", "Other"])
-        exp_amount = st.number_input("Amount (₹)", min_value=0, value=100, step=10)
+        
+        amount_method = st.radio("Amount input:", ["Quick Select", "Type Exact"], horizontal=True, label_visibility="collapsed")
+        if amount_method == "Quick Select":
+            exp_amount = st.select_slider("Amount (₹)", options=[50, 100, 150, 200, 250, 300, 400, 500, 750, 1000, 1500, 2000], value=100)
+        else:
+            exp_amount = st.number_input("Amount (₹)", min_value=0, value=100, step=1)
+        
         exp_desc = st.text_input("Description")
         if st.form_submit_button("Add Expense", use_container_width=True):
             new_row = pd.DataFrame({'Date': [pd.to_datetime(exp_date)], 'Category': [exp_category], 'Amount': [exp_amount], 'Description': [exp_desc]})
