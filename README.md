@@ -1,2 +1,2 @@
-# finance---tracker
+# finance-tracker
 personal Finance Tracker Web App
