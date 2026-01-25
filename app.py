@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from datetime import datetime
 
 # Page setup
 st.set_page_config(page_title="Finance Tracker", page_icon="💰", layout="wide")
 
-# Initialize data in session state
+# Initialize data
 if 'expenses' not in st.session_state:
     st.session_state.expenses = pd.DataFrame({
         'Date': pd.to_datetime(['2026-01-01', '2026-01-05', '2026-01-10']),
@@ -20,7 +19,7 @@ st.title("💰 Personal Finance Tracker")
 st.markdown("Track your expenses and visualize spending patterns!")
 st.markdown("---")
 
-# Sidebar - Add expense
+# Sidebar
 with st.sidebar:
     st.header("➕ Add New Expense")
     
@@ -61,32 +60,31 @@ if len(df) > 0:
     
     st.markdown("---")
     
-    # Charts
+    # Charts using Streamlit's built-in charts
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("📊 Spending by Category")
         category_data = df.groupby('Category')['Amount'].sum().reset_index()
-        fig1 = px.pie(category_data, values='Amount', names='Category', hole=0.4)
-        fig1.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig1, use_container_width=True)
+        st.bar_chart(category_data.set_index('Category'))
     
     with col2:
-        st.subheader("Category Breakdown")
-        category_sorted = category_data.sort_values('Amount', ascending=True)
-        fig2 = px.bar(category_sorted, x='Amount', y='Category', orientation='h', 
-                     color='Amount', color_continuous_scale='Blues')
-        st.plotly_chart(fig2, use_container_width=True)
-    
-    # Trend
-    st.subheader("📉 Spending Trend")
-    daily = df.groupby('Date')['Amount'].sum().reset_index()
-    fig3 = px.line(daily, x='Date', y='Amount', markers=True)
-    st.plotly_chart(fig3, use_container_width=True)
+        st.subheader("📈 Daily Spending Trend")
+        daily = df.groupby('Date')['Amount'].sum().reset_index()
+        st.line_chart(daily.set_index('Date'))
     
     st.markdown("---")
     
-    # Data table
+    # Category breakdown table
+    st.subheader("💰 Category Summary")
+    category_summary = df.groupby('Category')['Amount'].sum().reset_index()
+    category_summary['Percentage'] = (category_summary['Amount'] / category_summary['Amount'].sum() * 100).round(1)
+    category_summary = category_summary.sort_values('Amount', ascending=False)
+    st.dataframe(category_summary, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # All transactions
     col1, col2 = st.columns([3, 1])
     with col1:
         st.subheader("📋 All Transactions")
@@ -100,16 +98,22 @@ if len(df) > 0:
     
     # Insights
     st.markdown("---")
-    st.subheader(" Insights")
-    top_cat = category_data.loc[category_data['Amount'].idxmax()]
+    st.subheader("💡 Insights")
+    top_cat = category_summary.iloc[0]
     col1, col2 = st.columns(2)
     with col1:
-        st.info(f"**Top Category:** {top_cat['Category']}\n\n₹{top_cat['Amount']:,.0f} ({top_cat['Amount']/df['Amount'].sum()*100:.1f}%)")
+        st.info(f"**Top Category:** {top_cat['Category']}\n\n₹{top_cat['Amount']:,.0f} ({top_cat['Percentage']:.1f}%)")
     with col2:
         avg_daily = df['Amount'].sum() / max(1, (df['Date'].max() - df['Date'].min()).days + 1)
         st.info(f"**Daily Average:** ₹{avg_daily:,.0f}\n\nBased on your spending pattern")
 else:
-    st.info(" Add your first expense using the sidebar!")
+    st.info("👋 Add your first expense using the sidebar!")
 
 st.markdown("---")
-st.caption("Track daily expenses • Visualize patterns • Make better financial decisions")
+st.caption("💡 Track daily expenses • Visualize patterns • Make better financial decisions")
+```
+
+
+    
+   
+    
