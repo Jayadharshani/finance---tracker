@@ -69,14 +69,5 @@ if len(df) > 0:
     st.dataframe(display_df.sort_values('Date', ascending=False), use_container_width=True, hide_index=True)
     st.markdown("---")
     st.subheader("💡 Insights")
-    top_cat = category_summary.iloc[0]
-    col1, col2 = st.columns(2)
-    with col1:
-        st.info(f"**Top Category:** {top_cat['Category']}\n\n₹{top_cat['Amount']:,.0f} ({top_cat['Percentage']:.1f}%)")
-    with col2:
-        avg_daily = df['Amount'].sum() / max(1, (df['Date'].max() - df['Date'].min()).days + 1)
-        st.info(f"**Daily Average:** ₹{avg_daily:,.0f}\n\nBased on your spending pattern")
-else:
-    st.info("👋 Add your first expense using the sidebar!")
-st.markdown("---")
-st.caption("💡 Track daily expenses • Visualize patterns • Make better financial decisions")
+    else:
+       st.info("👋 Add your first expense using the sidebar!")
