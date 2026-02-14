@@ -37,10 +37,10 @@ def ask_ai(question, context):
         "model": "llama-3.3-70b-versatile",
         "messages": [{"role": "user", "content": context + "\n\nQuestion: " + question}],
         "temperature": 0.7,
-        "max_tokens": 800
+        "max_tokens": 300
     }
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=20)
+        response = requests.post(url, headers=headers, json=data, timeout=15)
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content']
         else:
@@ -87,75 +87,45 @@ with col2:
     ask_button = st.button("💬 Ask AI", type="primary")
 
 if ask_button and user_question:
-    with st.spinner("🤔 AI is analyzing your expenses..."):
-        # Calculate comprehensive statistics
+    with st.spinner("🤔 AI is analyzing..."):
+        # Calculate key statistics
         total = df['Amount'].sum()
-        avg_transaction = df['Amount'].mean()
-        highest_expense = df['Amount'].max()
         
-        # Category breakdown with percentages
-        category_totals = df.groupby('Category')['Amount'].sum().to_dict()
-        category_counts = df['Category'].value_counts().to_dict()
-        
-        # Top category
-        top_category = df.groupby('Category')['Amount'].sum().idxmax()
-        top_category_amount = df.groupby('Category')['Amount'].sum().max()
+        # Category breakdown
+        category_totals = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
+        top_category = category_totals.index[0]
+        top_category_amount = category_totals.values[0]
         top_category_percentage = (top_category_amount / total * 100)
         
-        # Recent transactions (last 10)
-        recent_df = df.sort_values('Date', ascending=False).head(10)
-        recent_transactions = ""
+        # Recent transactions (last 5)
+        recent_df = df.sort_values('Date', ascending=False).head(5)
+        recent_text = ""
         for _, row in recent_df.iterrows():
-            recent_transactions += f"- {row['Date'].strftime('%Y-%m-%d')}: {row['Category']} - ₹{row['Amount']} ({row['Description']})\n"
+            recent_text += f"{row['Category']}: ₹{row['Amount']}, "
+        recent_text = recent_text.rstrip(', ')
         
-        # Time period analysis
+        # Time analysis
         days_tracked = (df['Date'].max() - df['Date'].min()).days + 1
         daily_avg = total / days_tracked
         
-        # Spending trends
-        if len(df) >= 14:
-            df_sorted = df.sort_values('Date')
-            recent_week = df_sorted.tail(7)['Amount'].sum()
-            previous_week = df_sorted.iloc[-14:-7]['Amount'].sum()
-            if previous_week > 0:
-                weekly_change = ((recent_week - previous_week) / previous_week) * 100
-                trend = f"Spending trend: {'UP' if weekly_change > 0 else 'DOWN'} by {abs(weekly_change):.1f}% compared to previous week"
-            else:
-                trend = "Not enough data for weekly comparison"
-        else:
-            trend = "Not enough data for weekly comparison"
-        
-        # Build detailed context
-        context = f"""You are a helpful financial advisor analyzing a user's expense data in Indian Rupees (₹).
-
-COMPLETE SPENDING OVERVIEW:
-- Total Expenses: ₹{total:,.2f}
-- Number of Transactions: {len(df)}
-- Average Transaction: ₹{avg_transaction:,.2f}
-- Highest Single Expense: ₹{highest_expense:,.2f}
-- Days Tracked: {days_tracked}
-- Daily Average Spending: ₹{daily_avg:,.2f}
-- {trend}
-
-CATEGORY BREAKDOWN:
-"""
-        for cat, amount in sorted(category_totals.items(), key=lambda x: x[1], reverse=True):
+        # Category list
+        category_list = ""
+        for cat, amount in category_totals.items():
             percentage = (amount / total * 100)
-            count = category_counts.get(cat, 0)
-            context += f"- {cat}: ₹{amount:,.2f} ({percentage:.1f}% of total, {count} transactions)\n"
+            category_list += f"{cat}: ₹{amount:.0f} ({percentage:.0f}%), "
+        category_list = category_list.rstrip(', ')
         
-        context += f"""
-TOP SPENDING CATEGORY: {top_category} with ₹{top_category_amount:,.2f} ({top_category_percentage:.1f}%)
+        # Build concise context
+        context = f"""You are a financial advisor. User's expense data (in ₹):
 
-RECENT TRANSACTIONS (Last 10):
-{recent_transactions}
+Total spent: ₹{total:,.0f} over {days_tracked} days
+Daily average: ₹{daily_avg:.0f}
+Top category: {top_category} (₹{top_category_amount:.0f}, {top_category_percentage:.0f}%)
 
-Based on this detailed financial data, please provide:
-1. Direct answer to the user's question with specific numbers and percentages from the data
-2. Practical, actionable advice based on their actual spending patterns
-3. Positive encouragement that's relevant to their situation
+All categories: {category_list}
+Recent expenses: {recent_text}
 
-Keep the response conversational but include specific data points. Use emojis to make it engaging."""
+Answer in 2-3 short sentences ONLY with specific numbers. Be direct and helpful. Use emojis."""
         
         # Call the AI and get response
         ai_response = ask_ai(user_question, context)
