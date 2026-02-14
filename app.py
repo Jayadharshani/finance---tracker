@@ -2,12 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import requests
-import json
 
 st.set_page_config(page_title="Finance Tracker", page_icon="💰", layout="wide")
-
-# PUT YOUR API KEY HERE! Replace the text below
-GEMINI_API_KEY = "AIzaSyB1cMr0MknVxz8N4jIATe4s3jffYX4sd7s "
 
 if 'expenses' not in st.session_state:
     st.session_state.expenses = pd.DataFrame({
@@ -20,25 +16,28 @@ if 'expenses' not in st.session_state:
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
-def ask_gemini(question, context):
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    headers = {'Content-Type': 'application/json'}
+def ask_ai(question, context):
+    GROQ_API_KEY = "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"
+    
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {GROQ_API_KEY}'
+    }
     data = {
-        "contents": [{
-            "parts": [{
-                "text": context + "\n\nUser question: " + question
-            }]
-        }]
+        "model": "llama-3.3-70b-versatile",
+        "messages": [{"role": "user", "content": context + "\n\nQuestion: " + question}],
+        "temperature": 0.7,
+        "max_tokens": 500
     }
     try:
         response = requests.post(url, headers=headers, json=data, timeout=15)
         if response.status_code == 200:
-            result = response.json()
-            return result['candidates'][0]['content']['parts'][0]['text']
+            return response.json()['choices'][0]['message']['content']
         else:
-            return f"⚠️ Error {response.status_code}. Check your API key at aistudio.google.com"
+            return f"⚠️ Error {response.status_code}"
     except Exception as e:
-        return f"⚠️ Connection error: {str(e)}"
+        return f"⚠️ Error: {str(e)}"
 
 st.title("💰 AI-Powered Finance Tracker")
 st.markdown("Track expenses and chat with AI for smart insights!")
@@ -69,65 +68,53 @@ with st.sidebar:
 df = st.session_state.expenses
 
 st.subheader("🤖 Ask AI Financial Advisor")
-st.markdown("*Get personalized financial advice based on your spending!*")
+st.markdown("*Get personalized advice based on your spending!*")
 
 col1, col2 = st.columns([4, 1])
 with col1:
-    user_question = st.text_input(
-        "Ask me anything about your finances:", 
-        placeholder="e.g., How can I save ₹5000 next month? What's my biggest expense?",
-        label_visibility="collapsed"
-    )
+    user_question = st.text_input("Ask about your finances:", placeholder="e.g., How can I save money? What's my biggest expense?", label_visibility="collapsed")
 with col2:
     ask_button = st.button("💬 Ask AI", type="primary")
 
 if ask_button and user_question:
-    with st.spinner("🤔 AI is analyzing your spending patterns..."):
+    with st.spinner("🤔 AI is analyzing..."):
         total = df['Amount'].sum()
         categories = df.groupby('Category')['Amount'].sum().to_dict()
-        recent_transactions = df.tail(10)[['Date', 'Category', 'Amount', 'Description']].to_string()
+        recent = df.tail(10)[['Date', 'Category', 'Amount', 'Description']].to_string()
         
-        context = f"""You are an expert personal finance advisor helping a user manage their money better.
+        context = f"""You are a helpful personal finance advisor.
 
-USER'S SPENDING DATA:
-- Total spent: ₹{total:,.0f}
-- Spending by category: {categories}
+Total spent: ₹{total:,.0f}
+By category: {categories}
+Recent transactions:
+{recent}
 
-RECENT TRANSACTIONS:
-{recent_transactions}
-
-INSTRUCTIONS:
-- Provide specific, actionable financial advice
-- Use exact numbers from their data
-- Be encouraging and helpful
-- Keep response concise (3-4 sentences max)
-- If suggesting savings, be realistic"""
+Give specific, actionable financial advice. Be concise (3-4 sentences)."""
         
-        ai_response = ask_gemini(user_question, context)
+        ai_response = ask_ai(user_question, context)
         st.session_state.chat_history.append({"user": user_question, "ai": ai_response})
-        
         st.markdown("---")
-        st.success("✅ AI Financial Advisor says:")
+        st.success("✅ AI Advisor:")
         st.markdown(ai_response)
         st.markdown("---")
 
 if st.session_state.chat_history:
-    with st.expander("💬 View Previous Conversations"):
+    with st.expander("💬 Chat History"):
         for idx, chat in enumerate(reversed(st.session_state.chat_history[-5:]), 1):
-            st.markdown(f"**Question {idx}:** {chat['user']}")
+            st.markdown(f"**Q{idx}:** {chat['user']}")
             st.info(chat['ai'])
-            if idx < min(5, len(st.session_state.chat_history)):
+            if idx < len(st.session_state.chat_history):
                 st.markdown("---")
 
 st.markdown("---")
 
 if len(df) > 0:
-    st.subheader("📈 Key Performance Indicators")
+    st.subheader("📈 Key Metrics")
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("💵 Total Spent", f"₹{df['Amount'].sum():,.0f}")
     col2.metric("📊 Avg Transaction", f"₹{df['Amount'].mean():,.0f}")
     col3.metric("📈 Highest", f"₹{df['Amount'].max():,.0f}")
-    col4.metric("🔢 Total Entries", len(df))
+    col4.metric("🔢 Entries", len(df))
     
     st.markdown("---")
     
@@ -137,7 +124,7 @@ if len(df) > 0:
         category_data = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
         st.bar_chart(category_data)
     with col2:
-        st.subheader("📈 Daily Spending Trend")
+        st.subheader("📈 Daily Trend")
         daily = df.groupby('Date')['Amount'].sum()
         st.line_chart(daily)
     
@@ -149,7 +136,7 @@ if len(df) > 0:
     st.dataframe(category_summary, hide_index=True)
     
     st.markdown("---")
-    st.subheader("🚨 Smart Spending Alerts")
+    st.subheader("🚨 Smart Alerts")
     alerts = []
     category_totals = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
     
@@ -161,34 +148,31 @@ if len(df) > 0:
             if previous_week > 0:
                 change = ((recent_week - previous_week) / previous_week) * 100
                 if change > 20:
-                    alerts.append(("warning", f"🚨 Spending INCREASED by {change:.1f}% this week! (₹{recent_week:,.0f} vs ₹{previous_week:,.0f})"))
+                    alerts.append(("warning", f"🚨 Spending UP {change:.1f}% this week!"))
                 elif change < -20:
-                    alerts.append(("success", f"✅ Great job! Spending DECREASED by {abs(change):.1f}% this week!"))
+                    alerts.append(("success", f"✅ Spending DOWN {abs(change):.1f}% this week!"))
     
     top_category = category_totals.index[0]
     top_amount = category_totals.values[0]
     percentage = (top_amount / df['Amount'].sum()) * 100
     if percentage > 35:
-        alerts.append(("info", f"💡 {top_category} dominates your spending - {percentage:.1f}% of total (₹{top_amount:,.0f})"))
+        alerts.append(("info", f"💡 {top_category} is {percentage:.1f}% of spending"))
     
-    days_tracked = (df['Date'].max() - df['Date'].min()).days + 1
-    daily_avg = df['Amount'].sum() / days_tracked
-    alerts.append(("info", f"🎯 Daily average: ₹{daily_avg:.0f} (tracking for {days_tracked} days)"))
+    days = (df['Date'].max() - df['Date'].min()).days + 1
+    daily_avg = df['Amount'].sum() / days
+    alerts.append(("info", f"🎯 Daily avg: ₹{daily_avg:.0f}"))
     
-    category_counts = df['Category'].value_counts()
-    most_frequent = category_counts.index[0]
-    frequency = category_counts.values[0]
-    if frequency >= 3:
-        alerts.append(("info", f"📈 {most_frequent} appears {frequency} times - your most frequent expense!"))
+    freq = df['Category'].value_counts()
+    if len(freq) > 0 and freq.values[0] >= 3:
+        alerts.append(("info", f"📈 {freq.index[0]} appears {freq.values[0]} times"))
     
-    if alerts:
-        for alert_type, message in alerts:
-            if alert_type == "warning":
-                st.warning(message)
-            elif alert_type == "success":
-                st.success(message)
-            else:
-                st.info(message)
+    for alert_type, message in alerts:
+        if alert_type == "warning":
+            st.warning(message)
+        elif alert_type == "success":
+            st.success(message)
+        else:
+            st.info(message)
     
     st.markdown("---")
     col1, col2 = st.columns([3, 1])
@@ -196,30 +180,30 @@ if len(df) > 0:
         st.subheader("📋 All Transactions")
     with col2:
         csv = df.to_csv(index=False)
-        st.download_button("📥 Download CSV", csv, "expenses.csv", "text/csv")
+        st.download_button("📥 CSV", csv, "expenses.csv")
     
     display_df = df.copy()
     display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
     st.dataframe(display_df.sort_values('Date', ascending=False), hide_index=True)
     
     st.markdown("---")
-    st.subheader("📊 Summary Statistics")
+    st.subheader("📊 Statistics")
     col1, col2 = st.columns(2)
     with col1:
-        st.write("**Expense Statistics:**")
+        st.write("**Expenses:**")
         st.write(f"- Total: ₹{df['Amount'].sum():,.0f}")
         st.write(f"- Mean: ₹{df['Amount'].mean():,.2f}")
         st.write(f"- Median: ₹{df['Amount'].median():,.2f}")
         st.write(f"- Max: ₹{df['Amount'].max():,.2f}")
         st.write(f"- Min: ₹{df['Amount'].min():,.2f}")
     with col2:
-        st.write("**Transaction Info:**")
-        st.write(f"- Total Entries: {len(df)}")
-        st.write(f"- Unique Categories: {df['Category'].nunique()}")
-        st.write(f"- Date Range: {(df['Date'].max() - df['Date'].min()).days + 1} days")
-        st.write(f"- Avg per Day: ₹{(df['Amount'].sum() / max(1, (df['Date'].max() - df['Date'].min()).days + 1)):.0f}")
+        st.write("**Info:**")
+        st.write(f"- Entries: {len(df)}")
+        st.write(f"- Categories: {df['Category'].nunique()}")
+        st.write(f"- Days tracked: {days}")
+        st.write(f"- Avg/day: ₹{daily_avg:.0f}")
 else:
-    st.info("👋 Add your first expense using the sidebar to get started!")
+    st.info("👋 Add your first expense!")
 
 st.markdown("---")
-st.caption("💰 AI-Powered Finance Tracker • Get smart financial advice • Track spending patterns")
+st.caption("💰 AI Finance Tracker • Powered by Groq AI")
