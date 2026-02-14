@@ -1,17 +1,13 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-try:
-    import google.generativeai as genai
-except ImportError:
-    st.error("Installing required library. Please refresh in 1 minute.")
-    st.stop()
+import requests
+import json
 
 st.set_page_config(page_title="Finance Tracker", page_icon="💰", layout="wide")
 
-# Configure Gemini API
-genai.configure(api_key="AIzaSyB1cMr0MknVxz8N4jIATe4s3jffYX4sd7s")  # Replace with your key
-model = genai.GenerativeModel('gemini-pro')
+# Your API key - Replace this!
+GEMINI_API_KEY = "YOUR_API_KEY_HERE"
 
 if 'expenses' not in st.session_state:
     st.session_state.expenses = pd.DataFrame({
@@ -24,11 +20,31 @@ if 'expenses' not in st.session_state:
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
+def ask_gemini(question, context):
+    """Ask Gemini AI using REST API"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+    
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [{
+            "parts": [{"text": f"{context}\n\nUser question: {question}"}]
+        }]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        if response.status_code == 200:
+            result = response.json()
+            return result['candidates'][0]['content']['parts'][0]['text']
+        else:
+            return f"Error: {response.status_code}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
 st.title("💰 AI-Powered Finance Tracker")
 st.markdown("Track expenses and chat with AI for insights!")
 st.markdown("---")
 
-# Sidebar
 with st.sidebar:
     st.header("➕ Add New Expense")
     with st.form("add_expense"):
@@ -48,7 +64,6 @@ with st.sidebar:
 
 df = st.session_state.expenses
 
-# AI Chatbot Section
 st.subheader("🤖 Ask AI About Your Finances")
 
 col1, col2 = st.columns([3, 1])
@@ -59,36 +74,24 @@ with col2:
 
 if ask_button and user_question:
     with st.spinner("AI is thinking..."):
-        # Prepare context for AI
         total = df['Amount'].sum()
         categories = df.groupby('Category')['Amount'].sum().to_dict()
         recent = df.tail(5)[['Date', 'Category', 'Amount', 'Description']].to_string()
         
-        context = f"""
-        You are a personal finance assistant. Help the user understand their spending.
+        context = f"""You are a personal finance assistant. Help analyze spending.
         
-        Total spent: ₹{total}
-        Spending by category: {categories}
-        Recent transactions: {recent}
-        
-        User question: {user_question}
-        
-        Give a helpful, concise answer. Include specific numbers when relevant.
-        """
-        
-        try:
-            response = model.generate_content(context)
-            ai_response = response.text
-            
-            # Save to chat history
-            st.session_state.chat_history.append({"user": user_question, "ai": ai_response})
-            
-            st.success("✅ AI Response:")
-            st.write(ai_response)
-        except Exception as e:
-            st.error(f"Error: {str(e)}")
+Total spent: ₹{total}
+Spending by category: {categories}
+Recent transactions:
+{recent}
 
-# Show chat history
+Give a helpful, concise answer with specific numbers."""
+        
+        ai_response = ask_gemini(user_question, context)
+        st.session_state.chat_history.append({"user": user_question, "ai": ai_response})
+        st.success("✅ AI Response:")
+        st.write(ai_response)
+
 if st.session_state.chat_history:
     with st.expander("💬 Chat History"):
         for chat in reversed(st.session_state.chat_history[-5:]):
@@ -118,33 +121,33 @@ if len(df) > 0:
         st.line_chart(daily)
     
     st.markdown("---")
-    
     st.subheader("🚨 Smart Alerts")
     category_totals = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
-    top_category = category_totals.index[0]
-    top_amount = category_totals.values[0]
-    percentage = (top_amount / df['Amount'].sum()) * 100
-    
-    if percentage > 35:
-        st.info(f"💡 {top_category} dominates your spending - {percentage:.1f}% of total (₹{top_amount:,.0f})")
+    if len(category_totals) > 0:
+        top_category = category_totals.index[0]
+        top_amount = category_totals.values[0]
+        percentage = (top_amount / df['Amount'].sum()) * 100
+        if percentage > 35:
+            st.info(f"💡 {top_category} dominates - {percentage:.1f}% (₹{top_amount:,.0f})")
     
     days_tracked = (df['Date'].max() - df['Date'].min()).days + 1
     daily_avg = df['Amount'].sum() / days_tracked
-    st.info(f"🎯 Daily average: ₹{daily_avg:.0f} (tracking for {days_tracked} days)")
+    st.info(f"🎯 Daily average: ₹{daily_avg:.0f}")
     
     st.markdown("---")
-    
     col1, col2 = st.columns([3, 1])
     with col1:
         st.subheader("📋 All Transactions")
     with col2:
         csv = df.to_csv(index=False)
-        st.download_button("📥 Download CSV", csv, "expenses.csv", "text/csv")
+        st.download_button("📥 Download", csv, "expenses.csv", "text/csv")
     display_df = df.copy()
     display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
     st.dataframe(display_df.sort_values('Date', ascending=False), use_container_width=True, hide_index=True)
 else:
-    st.info("👋 Add your first expense using the sidebar!")
+    st.info("👋 Add your first expense!")
 
 st.markdown("---")
-st.caption("💰 AI-Powered Finance Tracker • Ask AI for insights • Smart spending analysis")
+st.caption("💰 AI-Powered Finance Tracker • Chat with AI for insights")
+
+
