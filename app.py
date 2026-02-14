@@ -37,10 +37,10 @@ def ask_ai(question, context):
         "model": "llama-3.3-70b-versatile",
         "messages": [{"role": "user", "content": context + "\n\nQuestion: " + question}],
         "temperature": 0.7,
-        "max_tokens": 500
+        "max_tokens": 800
     }
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=15)
+        response = requests.post(url, headers=headers, json=data, timeout=20)
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content']
         else:
@@ -87,21 +87,75 @@ with col2:
     ask_button = st.button("💬 Ask AI", type="primary")
 
 if ask_button and user_question:
-    with st.spinner("🤔 AI is analyzing..."):
+    with st.spinner("🤔 AI is analyzing your expenses..."):
+        # Calculate comprehensive statistics
         total = df['Amount'].sum()
-        categories = df.groupby('Category')['Amount'].sum().to_dict()
+        avg_transaction = df['Amount'].mean()
+        highest_expense = df['Amount'].max()
         
-        context = f"""You're a friendly finance advisor.
+        # Category breakdown with percentages
+        category_totals = df.groupby('Category')['Amount'].sum().to_dict()
+        category_counts = df['Category'].value_counts().to_dict()
+        
+        # Top category
+        top_category = df.groupby('Category')['Amount'].sum().idxmax()
+        top_category_amount = df.groupby('Category')['Amount'].sum().max()
+        top_category_percentage = (top_category_amount / total * 100)
+        
+        # Recent transactions (last 10)
+        recent_df = df.sort_values('Date', ascending=False).head(10)
+        recent_transactions = ""
+        for _, row in recent_df.iterrows():
+            recent_transactions += f"- {row['Date'].strftime('%Y-%m-%d')}: {row['Category']} - ₹{row['Amount']} ({row['Description']})\n"
+        
+        # Time period analysis
+        days_tracked = (df['Date'].max() - df['Date'].min()).days + 1
+        daily_avg = total / days_tracked
+        
+        # Spending trends
+        if len(df) >= 14:
+            df_sorted = df.sort_values('Date')
+            recent_week = df_sorted.tail(7)['Amount'].sum()
+            previous_week = df_sorted.iloc[-14:-7]['Amount'].sum()
+            if previous_week > 0:
+                weekly_change = ((recent_week - previous_week) / previous_week) * 100
+                trend = f"Spending trend: {'UP' if weekly_change > 0 else 'DOWN'} by {abs(weekly_change):.1f}% compared to previous week"
+            else:
+                trend = "Not enough data for weekly comparison"
+        else:
+            trend = "Not enough data for weekly comparison"
+        
+        # Build detailed context
+        context = f"""You are a helpful financial advisor analyzing a user's expense data in Indian Rupees (₹).
 
-Spending: ₹{total:,.0f}
-Categories: {categories}
+COMPLETE SPENDING OVERVIEW:
+- Total Expenses: ₹{total:,.2f}
+- Number of Transactions: {len(df)}
+- Average Transaction: ₹{avg_transaction:,.2f}
+- Highest Single Expense: ₹{highest_expense:,.2f}
+- Days Tracked: {days_tracked}
+- Daily Average Spending: ₹{daily_avg:,.2f}
+- {trend}
 
-Answer in 3 SHORT bullet points:
-💰 [spending fact]
-💡 [one tip]
-✅ [encouragement]
+CATEGORY BREAKDOWN:
+"""
+        for cat, amount in sorted(category_totals.items(), key=lambda x: x[1], reverse=True):
+            percentage = (amount / total * 100)
+            count = category_counts.get(cat, 0)
+            context += f"- {cat}: ₹{amount:,.2f} ({percentage:.1f}% of total, {count} transactions)\n"
+        
+        context += f"""
+TOP SPENDING CATEGORY: {top_category} with ₹{top_category_amount:,.2f} ({top_category_percentage:.1f}%)
 
-Keep each bullet under 15 words with emojis."""
+RECENT TRANSACTIONS (Last 10):
+{recent_transactions}
+
+Based on this detailed financial data, please provide:
+1. Direct answer to the user's question with specific numbers and percentages from the data
+2. Practical, actionable advice based on their actual spending patterns
+3. Positive encouragement that's relevant to their situation
+
+Keep the response conversational but include specific data points. Use emojis to make it engaging."""
         
         # Call the AI and get response
         ai_response = ask_ai(user_question, context)
