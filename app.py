@@ -80,20 +80,18 @@ if ask_button and user_question:
         total = df['Amount'].sum()
         categories = df.groupby('Category')['Amount'].sum().to_dict()
         recent = df.tail(10)[['Date', 'Category', 'Amount', 'Description']].to_string()
-        context = f"""You're a money-saving buddy helping a friend.
+        
+    context = f"""You're a friendly finance advisor.
 
-Data:
-- Total: ₹{total:,.0f}
-- Categories: {categories}
+Spending: ₹{total:,.0f}
+Categories: {categories}
 
-Answer in this EXACT format:
-💰 [One line about spending with specific number]
+Answer in 3 SHORT bullet points:
+💰 [spending fact]
+💡 [one tip]
+✅ [encouragement]
 
-💡 [One quick practical tip]
-
-✅ [Short encouraging line]
-
-Rules: Keep each line 10-15 words max. Use emojis. Be casual like texting."""
+Keep each bullet under 15 words with emojis ."""
         
 if st.session_state.chat_history:
     with st.expander("💬 Chat History"):
