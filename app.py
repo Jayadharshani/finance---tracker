@@ -16,6 +16,12 @@ if 'expenses' not in st.session_state:
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
+if 'latest_response' not in st.session_state:
+    st.session_state.latest_response = None
+
+if 'latest_question' not in st.session_state:
+    st.session_state.latest_question = None
+
 def ask_ai(question, context):
     try:
         GROQ_API_KEY = st.secrets["GROQ_API_KEY"]  
@@ -65,6 +71,8 @@ with st.sidebar:
     if st.button("🗑️ Clear All Data"):
         st.session_state.expenses = pd.DataFrame(columns=['Date', 'Category', 'Amount', 'Description'])
         st.session_state.chat_history = []
+        st.session_state.latest_response = None
+        st.session_state.latest_question = None
         st.success("✅ All data cleared!")
 
 df = st.session_state.expenses
@@ -74,7 +82,7 @@ st.markdown("*Get personalized advice based on your spending!*")
 
 col1, col2 = st.columns([4, 1])
 with col1:
-    user_question = st.text_input("Ask about your finances:", placeholder="e.g., How can I save money? What's my biggest expense?")
+    user_question = st.text_input("Ask about your finances:", placeholder="e.g., How can I save money? What's my biggest expense?", key="question_input")
 with col2:
     ask_button = st.button("💬 Ask AI", type="primary")
 
@@ -82,7 +90,6 @@ if ask_button and user_question:
     with st.spinner("🤔 AI is analyzing..."):
         total = df['Amount'].sum()
         categories = df.groupby('Category')['Amount'].sum().to_dict()
-        recent = df.tail(10)[['Date', 'Category', 'Amount', 'Description']].to_string()
         
         context = f"""You're a friendly finance advisor.
 
@@ -96,7 +103,7 @@ Answer in 3 SHORT bullet points:
 
 Keep each bullet under 15 words with emojis."""
         
-        # Actually call the AI and get response
+        # Call the AI and get response
         ai_response = ask_ai(user_question, context)
         
         # Store in chat history
@@ -105,16 +112,26 @@ Keep each bullet under 15 words with emojis."""
             'ai': ai_response
         })
         
-        # Display the response
-        st.success("🤖 AI Response:")
-        st.info(ai_response)
+        # Store as latest response
+        st.session_state.latest_response = ai_response
+        st.session_state.latest_question = user_question
+        
+        # Force rerun to clear input
+        st.rerun()
+
+# Display the latest response if it exists
+if st.session_state.latest_response:
+    st.success(f"🤖 AI Response to: '{st.session_state.latest_question}'")
+    st.info(st.session_state.latest_response)
+    st.markdown("---")
 
 if st.session_state.chat_history:
     with st.expander("💬 Chat History", expanded=False):
-        for idx, chat in enumerate(st.session_state.chat_history[-5:], 1):
+        # Show last 5 chats in reverse order (most recent first)
+        for idx, chat in enumerate(reversed(st.session_state.chat_history[-5:]), 1):
             st.markdown(f"**Q{idx}:** {chat['user']}")
             st.info(chat['ai'])
-            if idx < len(st.session_state.chat_history[-5:]):
+            if idx < min(5, len(st.session_state.chat_history)):
                 st.markdown("---")
 
 st.markdown("---")
