@@ -6,7 +6,7 @@ import google.generativeai as genai
 st.set_page_config(page_title="Finance Tracker", page_icon="💰", layout="wide")
 
 # Configure Gemini API
-genai.configure(api_key="YOUR_API_KEY_HERE")  # Replace with your key
+genai.configure(api_key="AIzaSyB1cMr0MknVxz8N4jIATe4s3jffYX4sd7s")  # Replace with your key
 model = genai.GenerativeModel('gemini-pro')
 
 if 'expenses' not in st.session_state:
