@@ -81,21 +81,18 @@ if ask_button and user_question:
         categories = df.groupby('Category')['Amount'].sum().to_dict()
         recent = df.tail(10)[['Date', 'Category', 'Amount', 'Description']].to_string()
         
-        context = f"""You are a helpful personal finance advisor.
+        context = f"""You're a friendly finance buddy helping a student save money.
 
-Total spent: ₹{total:,.0f}
-By category: {categories}
-Recent transactions:
-{recent}
+Data:
+- Total spent: ₹{total:,.0f}
+- Categories: {categories}
 
-Give specific, actionable financial advice. Be concise (3-4 sentences)."""
-        
-        ai_response = ask_ai(user_question, context)
-        st.session_state.chat_history.append({"user": user_question, "ai": ai_response})
-        st.markdown("---")
-        st.success("✅ AI Advisor:")
-        st.markdown(ai_response)
-        st.markdown("---")
+Answer in this EXACT format:
+💰 [One line about their spending with specific number]
+💡 [One practical tip]
+✅ [One encouraging sentence]
+
+Keep it super short and use emojis. Be casual like texting a friend."""
 
 if st.session_state.chat_history:
     with st.expander("💬 Chat History"):
