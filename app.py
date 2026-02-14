@@ -1,7 +1,11 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except ImportError:
+    st.error("Installing required library. Please refresh in 1 minute.")
+    st.stop()
 
 st.set_page_config(page_title="Finance Tracker", page_icon="💰", layout="wide")
 
