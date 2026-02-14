@@ -17,7 +17,7 @@ if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
 def ask_ai(question, context):
-    GROQ_API_KEY = "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"
+    gemini_API_KEY = "AIzaSyB1cMr0MknVxz8N4jIATe4s3jffYX4sd7s "
     
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
