@@ -17,7 +17,11 @@ if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
 def ask_ai(question, context):
-    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]  
+    try:
+        GROQ_API_KEY = st.secrets["GROQ_API_KEY"]  
+    except Exception:
+        return "⚠️ Error: GROQ_API_KEY not found in secrets"
+    
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         'Content-Type': 'application/json',
@@ -34,7 +38,7 @@ def ask_ai(question, context):
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content']
         else:
-            return f"⚠️ Error {response.status_code}"
+            return f"⚠️ Error {response.status_code}: {response.text}"
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
@@ -57,12 +61,11 @@ with st.sidebar:
             new_row = pd.DataFrame({'Date': [pd.to_datetime(exp_date)], 'Category': [exp_category], 'Amount': [exp_amount], 'Description': [exp_desc]})
             st.session_state.expenses = pd.concat([st.session_state.expenses, new_row], ignore_index=True)
             st.success(f"✅ Added: {exp_desc} - ₹{exp_amount}")
-            st.rerun()
     st.markdown("---")
     if st.button("🗑️ Clear All Data"):
         st.session_state.expenses = pd.DataFrame(columns=['Date', 'Category', 'Amount', 'Description'])
         st.session_state.chat_history = []
-        st.rerun()
+        st.success("✅ All data cleared!")
 
 df = st.session_state.expenses
 
@@ -71,7 +74,7 @@ st.markdown("*Get personalized advice based on your spending!*")
 
 col1, col2 = st.columns([4, 1])
 with col1:
-    user_question = st.text_input("Ask about your finances:", placeholder="e.g., How can I save money? What's my biggest expense?", label_visibility="collapsed")
+    user_question = st.text_input("Ask about your finances:", placeholder="e.g., How can I save money? What's my biggest expense?")
 with col2:
     ask_button = st.button("💬 Ask AI", type="primary")
 
@@ -81,7 +84,7 @@ if ask_button and user_question:
         categories = df.groupby('Category')['Amount'].sum().to_dict()
         recent = df.tail(10)[['Date', 'Category', 'Amount', 'Description']].to_string()
         
-    context = f"""You're a friendly finance advisor.
+        context = f"""You're a friendly finance advisor.
 
 Spending: ₹{total:,.0f}
 Categories: {categories}
@@ -91,14 +94,27 @@ Answer in 3 SHORT bullet points:
 💡 [one tip]
 ✅ [encouragement]
 
-Keep each bullet under 15 words with emojis ."""
+Keep each bullet under 15 words with emojis."""
         
+        # Actually call the AI and get response
+        ai_response = ask_ai(user_question, context)
+        
+        # Store in chat history
+        st.session_state.chat_history.append({
+            'user': user_question,
+            'ai': ai_response
+        })
+        
+        # Display the response
+        st.success("🤖 AI Response:")
+        st.info(ai_response)
+
 if st.session_state.chat_history:
-    with st.expander("💬 Chat History"):
-        for idx, chat in enumerate(reversed(st.session_state.chat_history[-5:]), 1):
+    with st.expander("💬 Chat History", expanded=False):
+        for idx, chat in enumerate(st.session_state.chat_history[-5:], 1):
             st.markdown(f"**Q{idx}:** {chat['user']}")
             st.info(chat['ai'])
-            if idx < len(st.session_state.chat_history):
+            if idx < len(st.session_state.chat_history[-5:]):
                 st.markdown("---")
 
 st.markdown("---")
@@ -128,7 +144,7 @@ if len(df) > 0:
     category_summary = df.groupby('Category')['Amount'].sum().reset_index()
     category_summary['Percentage'] = (category_summary['Amount'] / category_summary['Amount'].sum() * 100).round(1)
     category_summary = category_summary.sort_values('Amount', ascending=False)
-    st.dataframe(category_summary, hide_index=True)
+    st.dataframe(category_summary, hide_index=True, use_container_width=True)
     
     st.markdown("---")
     st.subheader("🚨 Smart Alerts")
@@ -175,11 +191,11 @@ if len(df) > 0:
         st.subheader("📋 All Transactions")
     with col2:
         csv = df.to_csv(index=False)
-        st.download_button("📥 CSV", csv, "expenses.csv")
+        st.download_button("📥 CSV", csv, "expenses.csv", "text/csv")
     
     display_df = df.copy()
     display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
-    st.dataframe(display_df.sort_values('Date', ascending=False), hide_index=True)
+    st.dataframe(display_df.sort_values('Date', ascending=False), hide_index=True, use_container_width=True)
     
     st.markdown("---")
     st.subheader("📊 Statistics")
@@ -198,7 +214,7 @@ if len(df) > 0:
         st.write(f"- Days tracked: {days}")
         st.write(f"- Avg/day: ₹{daily_avg:.0f}")
 else:
-    st.info("👋 Add your first expense!")
+    st.info("👋 Add your first expense using the sidebar!")
 
 st.markdown("---")
 st.caption("💰 AI Finance Tracker • Powered by Groq AI")
