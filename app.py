@@ -1,33 +1,36 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import google.generativeai as genai
 
 st.set_page_config(page_title="Finance Tracker", page_icon="💰", layout="wide")
 
+# Configure Gemini API
+genai.configure(api_key="YOUR_API_KEY_HERE")  # Replace with your key
+model = genai.GenerativeModel('gemini-pro')
+
 if 'expenses' not in st.session_state:
     st.session_state.expenses = pd.DataFrame({
-        'Date': pd.to_datetime(['2026-01-01', '2026-01-05', '2026-01-10', '2026-01-15', '2026-01-20']),
-        'Category': ['Food', 'Transport', 'Shopping', 'Food', 'Entertainment'],
-        'Amount': [150, 50, 500, 200, 400],
-        'Description': ['Breakfast', 'Auto', 'New shirt', 'Lunch', 'Movie']
+        'Date': pd.to_datetime(['2026-01-01', '2026-01-05', '2026-01-10']),
+        'Category': ['Food', 'Transport', 'Shopping'],
+        'Amount': [150, 50, 500],
+        'Description': ['Breakfast', 'Auto', 'New shirt']
     })
 
-st.title("💰 Personal Finance Tracker")
-st.markdown("Track your expenses and visualize spending patterns!")
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
+
+st.title("💰 AI-Powered Finance Tracker")
+st.markdown("Track expenses and chat with AI for insights!")
 st.markdown("---")
 
+# Sidebar
 with st.sidebar:
     st.header("➕ Add New Expense")
     with st.form("add_expense"):
         exp_date = st.date_input("Date", datetime.now())
         exp_category = st.selectbox("Category", ["Food", "Transport", "Shopping", "Entertainment", "Bills", "Education", "Health", "Other"])
-        
-        amount_method = st.radio("Amount input:", ["Quick Select", "Type Exact"], horizontal=True, label_visibility="collapsed")
-        if amount_method == "Quick Select":
-            exp_amount = st.select_slider("Amount (₹)", options=[50, 100, 150, 200, 250, 300, 400, 500, 750, 1000, 1500, 2000], value=100)
-        else:
-            exp_amount = st.number_input("Amount (₹)", min_value=0, value=100, step=1)
-        
+        exp_amount = st.number_input("Amount (₹)", min_value=0, value=100, step=50)
         exp_desc = st.text_input("Description")
         if st.form_submit_button("Add Expense", use_container_width=True):
             new_row = pd.DataFrame({'Date': [pd.to_datetime(exp_date)], 'Category': [exp_category], 'Amount': [exp_amount], 'Description': [exp_desc]})
@@ -41,6 +44,56 @@ with st.sidebar:
 
 df = st.session_state.expenses
 
+# AI Chatbot Section
+st.subheader("🤖 Ask AI About Your Finances")
+
+col1, col2 = st.columns([3, 1])
+with col1:
+    user_question = st.text_input("Ask anything about your expenses:", placeholder="e.g., How much did I spend on food?")
+with col2:
+    ask_button = st.button("Ask AI", use_container_width=True)
+
+if ask_button and user_question:
+    with st.spinner("AI is thinking..."):
+        # Prepare context for AI
+        total = df['Amount'].sum()
+        categories = df.groupby('Category')['Amount'].sum().to_dict()
+        recent = df.tail(5)[['Date', 'Category', 'Amount', 'Description']].to_string()
+        
+        context = f"""
+        You are a personal finance assistant. Help the user understand their spending.
+        
+        Total spent: ₹{total}
+        Spending by category: {categories}
+        Recent transactions: {recent}
+        
+        User question: {user_question}
+        
+        Give a helpful, concise answer. Include specific numbers when relevant.
+        """
+        
+        try:
+            response = model.generate_content(context)
+            ai_response = response.text
+            
+            # Save to chat history
+            st.session_state.chat_history.append({"user": user_question, "ai": ai_response})
+            
+            st.success("✅ AI Response:")
+            st.write(ai_response)
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+
+# Show chat history
+if st.session_state.chat_history:
+    with st.expander("💬 Chat History"):
+        for chat in reversed(st.session_state.chat_history[-5:]):
+            st.markdown(f"**You:** {chat['user']}")
+            st.markdown(f"**AI:** {chat['ai']}")
+            st.markdown("---")
+
+st.markdown("---")
+
 if len(df) > 0:
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("💵 Total Spent", f"₹{df['Amount'].sum():,.0f}")
@@ -53,87 +106,30 @@ if len(df) > 0:
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("📊 Spending by Category")
-        category_data = df.groupby('Category')['Amount'].sum().reset_index()
-        st.bar_chart(category_data.set_index('Category'))
+        category_data = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
+        st.bar_chart(category_data)
     with col2:
-        st.subheader("📈 Daily Spending Trend")
-        daily = df.groupby('Date')['Amount'].sum().reset_index()
-        st.line_chart(daily.set_index('Date'))
+        st.subheader("📈 Daily Spending")
+        daily = df.groupby('Date')['Amount'].sum()
+        st.line_chart(daily)
     
     st.markdown("---")
-    st.subheader("💰 Category Summary")
-    category_summary = df.groupby('Category')['Amount'].sum().reset_index()
-    category_summary['Percentage'] = (category_summary['Amount'] / category_summary['Amount'].sum() * 100).round(1)
-    category_summary = category_summary.sort_values('Amount', ascending=False)
-    st.dataframe(category_summary, use_container_width=True, hide_index=True)
     
-    st.markdown("---")
-    st.subheader("🚨 Smart Spending Alerts")
-    
-    alerts = []
+    st.subheader("🚨 Smart Alerts")
     category_totals = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
-    
-    if len(df) >= 7:
-        df_sorted = df.sort_values('Date')
-        recent_week = df_sorted.tail(7)['Amount'].sum()
-        if len(df) >= 14:
-            previous_week = df_sorted.iloc[-14:-7]['Amount'].sum()
-            if previous_week > 0:
-                change = ((recent_week - previous_week) / previous_week) * 100
-                if change > 20:
-                    alerts.append(("warning", f"🚨 Spending INCREASED by {change:.1f}% this week! (₹{recent_week:,.0f} vs ₹{previous_week:,.0f})"))
-                elif change < -20:
-                    alerts.append(("success", f"✅ Great job! Spending DECREASED by {abs(change):.1f}% this week!"))
-    
     top_category = category_totals.index[0]
     top_amount = category_totals.values[0]
     percentage = (top_amount / df['Amount'].sum()) * 100
+    
     if percentage > 35:
-        alerts.append(("info", f"💡 {top_category} dominates your spending - {percentage:.1f}% of total (₹{top_amount:,.0f})"))
-    
-    df_with_day = df.copy()
-    df_with_day['DayOfWeek'] = df_with_day['Date'].dt.dayofweek
-    weekend = df_with_day[df_with_day['DayOfWeek'].isin([5, 6])]['Amount'].sum()
-    weekday = df_with_day[~df_with_day['DayOfWeek'].isin([5, 6])]['Amount'].sum()
-    if weekend > 0 and weekday > 0:
-        weekend_count = len(df_with_day[df_with_day['DayOfWeek'].isin([5, 6])])
-        weekday_count = len(df_with_day[~df_with_day['DayOfWeek'].isin([5, 6])])
-        if weekend_count > 0 and weekday_count > 0:
-            weekend_avg = weekend / weekend_count
-            weekday_avg = weekday / weekday_count
-            if weekend_avg > weekday_avg * 1.5:
-                alerts.append(("warning", f"⚠️ Weekend spending (₹{weekend_avg:.0f}/day) is {(weekend_avg/weekday_avg):.1f}x higher than weekdays!"))
-    
-    threshold = df['Amount'].mean() + (2 * df['Amount'].std())
-    large_expenses = df[df['Amount'] > threshold]
-    if len(large_expenses) > 0:
-        for _, expense in large_expenses.head(3).iterrows():
-            alerts.append(("error", f"📊 Unusual spike: ₹{expense['Amount']:,.0f} on {expense['Date'].strftime('%Y-%m-%d')} ({expense['Description']})"))
+        st.info(f"💡 {top_category} dominates your spending - {percentage:.1f}% of total (₹{top_amount:,.0f})")
     
     days_tracked = (df['Date'].max() - df['Date'].min()).days + 1
     daily_avg = df['Amount'].sum() / days_tracked
-    alerts.append(("info", f"🎯 Daily average: ₹{daily_avg:.0f} (tracking for {days_tracked} days)"))
-    
-    category_counts = df['Category'].value_counts()
-    most_frequent = category_counts.index[0]
-    frequency = category_counts.values[0]
-    if frequency >= 3:
-        alerts.append(("info", f"📈 {most_frequent} appears {frequency} times - your most frequent expense!"))
-    
-    if alerts:
-        for alert_type, message in alerts:
-            if alert_type == "warning":
-                st.warning(message)
-            elif alert_type == "success":
-                st.success(message)
-            elif alert_type == "error":
-                st.error(message)
-            else:
-                st.info(message)
-    else:
-        st.info("Add more expenses to see personalized alerts!")
+    st.info(f"🎯 Daily average: ₹{daily_avg:.0f} (tracking for {days_tracked} days)")
     
     st.markdown("---")
+    
     col1, col2 = st.columns([3, 1])
     with col1:
         st.subheader("📋 All Transactions")
@@ -147,4 +143,4 @@ else:
     st.info("👋 Add your first expense using the sidebar!")
 
 st.markdown("---")
-st.caption("💡 Track daily expenses • Visualize patterns • Make better financial decisions")
+st.caption("💰 AI-Powered Finance Tracker • Ask AI for insights • Smart spending analysis")
