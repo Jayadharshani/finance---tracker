@@ -223,4 +223,3 @@ else:
 
 st.markdown("---")
 st.caption("💰 AI-Powered Finance Tracker • Get smart financial advice • Track spending patterns")
-`
