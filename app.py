@@ -20,24 +20,31 @@ if 'expenses' not in st.session_state:
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
-def ask_ai(question, context):
-    """Ask Gemini AI"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+def ask_gemini(question, context):
+    """Fixed Gemini API call"""
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    
     headers = {'Content-Type': 'application/json'}
+    
     data = {
         "contents": [{
-            "parts": [{"text": f"{context}\n\nUser question: {question}"}]
+            "parts": [{
+                "text": context + "\n\nUser question: " + question
+            }]
         }]
     }
+    
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=10)
+        response = requests.post(url, headers=headers, json=data, timeout=15)
+        
         if response.status_code == 200:
             result = response.json()
             return result['candidates'][0]['content']['parts'][0]['text']
         else:
-            return f"Sorry, I couldn't process that. (Error {response.status_code})"
+            return f"⚠️ Error {response.status_code}: Please check API key is active at aistudio.google.com"
+            
     except Exception as e:
-        return f"Error connecting to AI: {str(e)}"
+        return f"⚠️ Connection error: {str(e)}"
 
 st.title("💰 AI-Powered Finance Tracker")
 st.markdown("Track expenses, get AI insights, and visualize spending patterns!")
