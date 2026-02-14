@@ -101,7 +101,7 @@ Recent 5 transactions:
 
 Give practical, specific advice with numbers. Be conversational and helpful."""
         
-        ai_answer = ask_ai(user_question, context)
+        ai_response = ask_gemini(user_question, context)
         st.session_state.chat_history.append({"q": user_question, "a": ai_answer})
         
         st.success("✅ AI Response:")
