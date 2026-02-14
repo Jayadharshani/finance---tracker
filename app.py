@@ -7,7 +7,7 @@ import json
 st.set_page_config(page_title="Finance Tracker", page_icon="💰", layout="wide")
 
 # ADD YOUR GEMINI API KEY HERE!
-GEMINI_API_KEY = "YOUR_API_KEY_HERE"  # Replace with your actual key
+GEMINI_API_KEY = "AIzaSyB1cMr0MknVxz8N4jIATe4s3jffYX4sd7s"  # Replace with your actual key
 
 if 'expenses' not in st.session_state:
     st.session_state.expenses = pd.DataFrame({
