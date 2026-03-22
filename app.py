@@ -21,7 +21,6 @@ if 'latest_response' not in st.session_state:
 
 if 'latest_question' not in st.session_state:
     st.session_state.latest_question = None
-
 def ask_ai(question, context):
     try:
         GROQ_API_KEY = st.secrets["GROQ_API_KEY"]  
@@ -36,7 +35,7 @@ def ask_ai(question, context):
     data = {
         "model": "llama-3.3-70b-versatile",
         "messages": [{"role": "user", "content": context + "\n\nQuestion: " + question}],
-        "temperature": 0.7,
+        "temperature": 0.3,
         "max_tokens": 300
     }
     try:
@@ -51,6 +50,46 @@ def ask_ai(question, context):
 st.title("💰 AI-Powered Finance Tracker")
 st.markdown("Track expenses and chat with AI for smart insights!")
 st.markdown("---")
+st.markdown("""
+<style>
+/* Main background */
+.stApp {
+    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+    color: white;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background-color: #111827;
+}
+
+/* Cards (metrics feel) */
+[data-testid="metric-container"] {
+    background-color: #1f2937;
+    padding: 15px;
+    border-radius: 10px;
+    border: 1px solid #374151;
+}
+
+/* Buttons */
+.stButton>button {
+    background-color: #2563eb;
+    color: white;
+    border-radius: 8px;
+}
+
+/* Input boxes */
+.stTextInput>div>div>input {
+    background-color: #1f2937;
+    color: white;
+}
+
+/* Table */
+.stDataFrame {
+    background-color: #111827;
+}
+</style>
+""", unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("➕ Add New Expense")
