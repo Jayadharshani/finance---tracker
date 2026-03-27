@@ -21,6 +21,7 @@ if 'latest_response' not in st.session_state:
 
 if 'latest_question' not in st.session_state:
     st.session_state.latest_question = None
+
 def ask_ai(question, context):
     try:
         GROQ_API_KEY = st.secrets["GROQ_API_KEY"]  
@@ -35,7 +36,7 @@ def ask_ai(question, context):
     data = {
         "model": "llama-3.3-70b-versatile",
         "messages": [{"role": "user", "content": context + "\n\nQuestion: " + question}],
-        "temperature": 0.3,
+        "temperature": 0.7,
         "max_tokens": 300
     }
     try:
@@ -50,46 +51,6 @@ def ask_ai(question, context):
 st.title("💰 AI-Powered Finance Tracker")
 st.markdown("Track expenses and chat with AI for smart insights!")
 st.markdown("---")
-st.markdown("""
-<style>
-/* Main background */
-.stApp {
-    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-    color: white;
-}
-
-/* Sidebar */
-section[data-testid="stSidebar"] {
-    background-color: #111827;
-}
-
-/* Cards (metrics feel) */
-[data-testid="metric-container"] {
-    background-color: #1f2937;
-    padding: 15px;
-    border-radius: 10px;
-    border: 1px solid #374151;
-}
-
-/* Buttons */
-.stButton>button {
-    background-color: #2563eb;
-    color: white;
-    border-radius: 8px;
-}
-
-/* Input boxes */
-.stTextInput>div>div>input {
-    background-color: #1f2937;
-    color: white;
-}
-
-/* Table */
-.stDataFrame {
-    background-color: #111827;
-}
-</style>
-""", unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("➕ Add New Expense")
@@ -209,19 +170,16 @@ if len(df) > 0:
     
     st.markdown("---")
     
-    category_data = df.groupby('Category')['Amount'].sum()
-    fig, ax = plt.subplots()
-    ax.bar(category_data.index, category_data.values)
-    ax.set_facecolor("#111827")
-    fig.patch.set_facecolor("#111827")
-    st.pyplot(fig)
-    daily = df.groupby('Date')['Amount'].sum()
-    fig, ax = plt.subplots()
-    ax.plot(daily.index, daily.values)
-    ax.set_facecolor("#111827")
-    fig.patch.set_facecolor("#111827")
-
-st.pyplot(fig)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📊 Spending by Category")
+        category_data = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
+        st.bar_chart(category_data)
+    with col2:
+        st.subheader("📈 Daily Trend")
+        daily = df.groupby('Date')['Amount'].sum()
+        st.line_chart(daily)
+    
     st.markdown("---")
     st.subheader("💰 Category Summary")
     category_summary = df.groupby('Category')['Amount'].sum().reset_index()
@@ -300,4 +258,4 @@ else:
     st.info("👋 Add your first expense using the sidebar!")
 
 st.markdown("---")
-st.caption("💰 AI Finance Tracker • Powered by Groq AI") change any mistake is they and give correct full code 
+st.caption("💰 AI Finance Tracker • Powered by Groq AI")
