@@ -209,16 +209,19 @@ if len(df) > 0:
     
     st.markdown("---")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("📊 Spending by Category")
-        category_data = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
-        st.bar_chart(category_data)
-    with col2:
-        st.subheader("📈 Daily Trend")
-        daily = df.groupby('Date')['Amount'].sum()
-        st.line_chart(daily)
-    
+    category_data = df.groupby('Category')['Amount'].sum()
+    fig, ax = plt.subplots()
+    ax.bar(category_data.index, category_data.values)
+    ax.set_facecolor("#111827")
+    fig.patch.set_facecolor("#111827")
+    st.pyplot(fig)
+    daily = df.groupby('Date')['Amount'].sum()
+    fig, ax = plt.subplots()
+    ax.plot(daily.index, daily.values)
+    ax.set_facecolor("#111827")
+    fig.patch.set_facecolor("#111827")
+
+st.pyplot(fig)
     st.markdown("---")
     st.subheader("💰 Category Summary")
     category_summary = df.groupby('Category')['Amount'].sum().reset_index()
