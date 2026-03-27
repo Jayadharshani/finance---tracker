@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import requests
-import matplotlib.pyplot as plt   
 
 st.set_page_config(page_title="Finance Tracker", page_icon="💰", layout="wide")
 
@@ -14,15 +13,6 @@ if 'expenses' not in st.session_state:
         'Amount': [150, 50, 500, 200, 400],
         'Description': ['Breakfast', 'Auto', 'New shirt', 'Lunch', 'Movie']
     })
-
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
-
-if 'latest_response' not in st.session_state:
-    st.session_state.latest_response = None
-
-if 'latest_question' not in st.session_state:
-    st.session_state.latest_question = None
 
 # ---------- AI FUNCTION ----------
 def ask_ai(question, context):
@@ -108,32 +98,16 @@ if len(df) > 0:
 
     st.markdown("---")
 
-    # ---------- CHARTS ----------
-    col1,col2 = st.columns(2)
+    # ---------- CHARTS (FIXED - NO MATPLOTLIB) ----------
+    col1, col2 = st.columns(2)
 
-    # 📊 BAR CHART
     with col1:
         st.subheader("📊 Category Spending")
-        category_data = df.groupby('Category')['Amount'].sum()
+        st.bar_chart(df.groupby('Category')['Amount'].sum())
 
-        fig, ax = plt.subplots()
-        ax.bar(category_data.index, category_data.values, color="#60A5FA")
-        ax.set_facecolor("#111827")
-        fig.patch.set_facecolor("#111827")
-        ax.tick_params(colors='white')
-        st.pyplot(fig)
-
-    # 📈 LINE CHART
     with col2:
         st.subheader("📈 Daily Trend")
-        daily = df.groupby('Date')['Amount'].sum()
-
-        fig, ax = plt.subplots()
-        ax.plot(daily.index, daily.values, color="#34D399", marker='o')
-        ax.set_facecolor("#111827")
-        fig.patch.set_facecolor("#111827")
-        ax.tick_params(colors='white')
-        st.pyplot(fig)
+        st.line_chart(df.groupby('Date')['Amount'].sum())
 
     st.markdown("---")
 
