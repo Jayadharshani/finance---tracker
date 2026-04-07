@@ -28,7 +28,7 @@ def ask_ai(question, context):
     except:
         return "⚠️ GEMINI_API_KEY not found in secrets"
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={API_KEY}"
     data = {
         "contents": [{"parts": [{"text": context + "\n\nQuestion: " + question}]}],
         "generationConfig": {"maxOutputTokens": 300, "temperature": 0.7}
