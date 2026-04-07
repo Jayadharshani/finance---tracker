@@ -107,35 +107,28 @@ if ask_button and user_question:
             percentage = (amount / total * 100)
             category_list += f"{cat}: ₹{amount:.0f} ({percentage:.0f}%), "
         category_list = category_list.rstrip(', ')
-        
-        # Build concise context
-context = f"""You are a smart, friendly personal finance advisor for an Indian user. 
-Analyze their real expense data and give specific, actionable advice.
-
-THEIR SPENDING DATA:
-- Total spent: ₹{total:,.0f} over {days_tracked} days
-- Daily average: ₹{daily_avg:.0f}/day
-- Monthly estimate: ₹{daily_avg * 30:,.0f}/month
-- Savings potential: based on spending patterns
-
-CATEGORY BREAKDOWN:
-{category_list}
-
-RECENT TRANSACTIONS:
-{recent_text}
-
-TOP SPENDING AREA: {top_category} at ₹{top_category_amount:.0f} ({top_category_percentage:.0f}% of total)
-
-INSTRUCTIONS:
-- Detect the intent of the question (savings tips, budget plan, category analysis, alerts, etc.)
-- Give specific advice using their EXACT numbers, not generic statements
-- If they ask for tips, give 3-4 numbered actionable tips with real ₹ amounts
-- If they ask about a category, analyze that specific category deeply
-- If they ask for a budget plan, create a simple monthly plan using their data
-- Always end with one motivational next step
-- Keep response complete, never cut off mid-sentence
-- Use ₹ symbol for all amounts
-- Use emojis to make it readable"""
+        context = f"""You are a smart, friendly personal finance advisor for an Indian user. 
+        Analyze their real expense data and give specific, actionable advice.
+        THEIR SPENDING DATA:
+        - Total spent: ₹{total:,.0f} over {days_tracked} days
+        - Daily average: ₹{daily_avg:.0f}/day
+        - Monthly estimate: ₹{daily_avg * 30:,.0f}/month
+        - Savings potential: based on spending patterns
+        CATEGORY BREAKDOWN:
+        {category_list}
+        RECENT TRANSACTIONS:
+        {recent_text}
+        TOP SPENDING AREA: {top_category} at ₹{top_category_amount:.0f} ({top_category_percentage:.0f}% of total)
+        INSTRUCTIONS:
+        - Detect the intent of the question (savings tips, budget plan, category analysis, alerts, etc.)
+        - Give specific advice using their EXACT numbers, not generic statements
+        - If they ask for tips, give 3-4 numbered actionable tips with real ₹ amounts
+        - If they ask about a category, analyze that specific category deeply
+        - If they ask for a budget plan, create a simple monthly plan using their data
+        - Always end with one motivational next step
+        - Keep response complete, never cut off mid-sentence
+        - Use ₹ symbol for all amounts
+        - Use emojis to make it readable"""
         # Call the AI and get response
         ai_response = ask_ai(user_question, context)
         
