@@ -24,7 +24,7 @@ if 'latest_question' not in st.session_state:
 
 def ask_ai(question, context):
     try:
-        API_KEY = st.secrets["GEMINI_API_KEY"]
+        API_KEY = st.secrets["AIzaSyAADE3eNzpq9Cgf1L4smaB6vR91ODMgC6g"]
     except:
         return "⚠️ GEMINI_API_KEY not found in secrets"
     
