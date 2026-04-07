@@ -24,25 +24,19 @@ if 'latest_question' not in st.session_state:
 
 def ask_ai(question, context):
     try:
-        GROQ_API_KEY = st.secrets["GROQ_API_KEY"]  
-    except Exception:
-        return "⚠️ Error: GROQ_API_KEY not found in secrets"
+        API_KEY = st.secrets["GEMINI_API_KEY"]
+    except:
+        return "⚠️ GEMINI_API_KEY not found in secrets"
     
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {GROQ_API_KEY}'
-    }
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={API_KEY}"
     data = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [{"role": "user", "content": context + "\n\nQuestion: " + question}],
-        "temperature": 0.7,
-        "max_tokens": 300
+        "contents": [{"parts": [{"text": context + "\n\nQuestion: " + question}]}],
+        "generationConfig": {"maxOutputTokens": 300, "temperature": 0.7}
     }
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=15)
+        response = requests.post(url, json=data, timeout=15)
         if response.status_code == 200:
-            return response.json()['choices'][0]['message']['content']
+            return response.json()['candidates'][0]['content']['parts'][0]['text']
         else:
             return f"⚠️ Error {response.status_code}: {response.text}"
     except Exception as e:
