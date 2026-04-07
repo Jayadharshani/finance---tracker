@@ -30,7 +30,7 @@ def ask_ai(question, context):
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={API_KEY}"
     data = {
         "contents": [{"parts": [{"text": context + "\n\nQuestion: " + question}]}],
-        "generationConfig": {"maxOutputTokens": 300, "temperature": 0.7}
+        "generationConfig": {"maxOutputTokens": 800, "temperature": 0.7}
     }
     try:
         response = requests.post(url, json=data, timeout=15)
@@ -109,17 +109,33 @@ if ask_button and user_question:
         category_list = category_list.rstrip(', ')
         
         # Build concise context
-        context = f"""You are a financial advisor. User's expense data (in ₹):
+        context = f"""You are a smart, friendly personal finance advisor for an Indian user. 
+Analyze their real expense data and give specific, actionable advice.
 
-Total spent: ₹{total:,.0f} over {days_tracked} days
-Daily average: ₹{daily_avg:.0f}
-Top category: {top_category} (₹{top_category_amount:.0f}, {top_category_percentage:.0f}%)
+THEIR SPENDING DATA:
+- Total spent: ₹{total:,.0f} over {days_tracked} days
+- Daily average: ₹{daily_avg:.0f}/day
+- Monthly estimate: ₹{daily_avg * 30:,.0f}/month
+- Savings potential: based on spending patterns
 
-All categories: {category_list}
-Recent expenses: {recent_text}
+CATEGORY BREAKDOWN:
+{category_list}
 
-Answer in 2-3 short sentences ONLY with specific numbers. Be direct and helpful. Use emojis."""
-        
+RECENT TRANSACTIONS:
+{recent_text}
+
+TOP SPENDING AREA: {top_category} at ₹{top_category_amount:.0f} ({top_category_percentage:.0f}% of total)
+
+INSTRUCTIONS:
+- Detect the intent of the question (savings tips, budget plan, category analysis, alerts, etc.)
+- Give specific advice using their EXACT numbers, not generic statements
+- If they ask for tips, give 3-4 numbered actionable tips with real ₹ amounts
+- If they ask about a category, analyze that specific category deeply
+- If they ask for a budget plan, create a simple monthly plan using their data
+- Always end with one motivational next step
+- Keep response complete, never cut off mid-sentence
+- Use ₹ symbol for all amounts
+- Use emojis to make it readable"""
         # Call the AI and get response
         ai_response = ask_ai(user_question, context)
         
