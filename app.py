@@ -109,7 +109,7 @@ if ask_button and user_question:
         category_list = category_list.rstrip(', ')
         
         # Build concise context
-        context = f"""You are a smart, friendly personal finance advisor for an Indian user. 
+context = f"""You are a smart, friendly personal finance advisor for an Indian user. 
 Analyze their real expense data and give specific, actionable advice.
 
 THEIR SPENDING DATA:
