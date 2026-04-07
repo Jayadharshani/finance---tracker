@@ -19,7 +19,7 @@ st.markdown("""
     section[data-testid="stSidebar"] .stButton > button {
         background: rgba(255,255,255,0.1) !important;
         border: 1px solid rgba(255,255,255,0.2) !important;
-        color: white !important;
+        color: black !important;
         border-radius: 10px !important;
         width: 100%;
     }
