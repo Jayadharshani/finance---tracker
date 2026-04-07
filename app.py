@@ -21,14 +21,13 @@ if 'latest_response' not in st.session_state:
 
 if 'latest_question' not in st.session_state:
     st.session_state.latest_question = None
-
 def ask_ai(question, context):
     try:
         API_KEY = st.secrets["GEMINI_API_KEY"]
     except:
         return "⚠️ GEMINI_API_KEY not found in secrets"
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={API_KEY}"
     data = {
         "contents": [{"parts": [{"text": context + "\n\nQuestion: " + question}]}],
         "generationConfig": {"maxOutputTokens": 300, "temperature": 0.7}
