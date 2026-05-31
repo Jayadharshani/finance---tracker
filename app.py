@@ -48,6 +48,12 @@ st.markdown("---")
 with st.sidebar:
     st.header("➕ Add New Expense")
     with st.form("add_expense"):
+        monthly_budget = st.number_input(
+    "🎯 Monthly Budget (₹)",
+        min_value=1000,
+        value=10000,
+        step=500
+)
         exp_date = st.date_input("Date", datetime.now())
         exp_category = st.selectbox("Category", ["Food", "Transport", "Shopping", "Entertainment", "Bills", "Education", "Health", "Other"])
         amount_method = st.radio("Amount input:", ["Quick Select", "Type Exact"], horizontal=True, label_visibility="collapsed")
@@ -164,11 +170,28 @@ st.markdown("---")
 
 if len(df) > 0:
     st.subheader("📈 Key Metrics")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
+    remaining_budget = monthly_budget - df['Amount'].sum()
+
     col1.metric("💵 Total Spent", f"₹{df['Amount'].sum():,.0f}")
     col2.metric("📊 Avg Transaction", f"₹{df['Amount'].mean():,.0f}")
     col3.metric("📈 Highest", f"₹{df['Amount'].max():,.0f}")
     col4.metric("🔢 Entries", len(df))
+    col5.metric("🎯 Remaining", f"₹{remaining_budget:,.0f}")
+    spent = df['Amount'].sum()
+    usage = min(spent / monthly_budget, 1.0)
+
+     st.write(
+         f"💰 Budget Usage: ₹{spent:,.0f} / ₹{monthly_budget:,.0f}"
+)
+
+    st.progress(usage)
+    if spent > monthly_budget:
+    st.error("🚨 Budget Exceeded!")
+elif spent > monthly_budget * 0.8:
+    st.warning("⚠️ More than 80% of budget used")
+else:
+    st.success("✅ Budget under control")
     
     st.markdown("---")
     
