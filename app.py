@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
 import base64
 import io
+import json
 
 # ── Optional imports ──────────────────────────────────────────────
 try:
@@ -12,12 +13,6 @@ try:
     SKLEARN_OK = True
 except ImportError:
     SKLEARN_OK = False
-
-try:
-    import pymongo
-    MONGO_OK = True
-except ImportError:
-    MONGO_OK = False
 
 try:
     from reportlab.lib.pagesizes import letter
@@ -48,10 +43,6 @@ if 'latest_question' not in st.session_state:
     st.session_state.latest_question = None
 if 'monthly_budget' not in st.session_state:
     st.session_state.monthly_budget = 10000
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'username' not in st.session_state:
-    st.session_state.username = ""
 
 # ══════════════════════════════════════════════════════════════════
 # 1. GEMINI AI HELPER
@@ -75,61 +66,7 @@ def ask_ai(question, context):
         return f"⚠️ Error: {str(e)}"
 
 # ══════════════════════════════════════════════════════════════════
-# 2. MONGODB LOGIN SYSTEM
-# ══════════════════════════════════════════════════════════════════
-def get_mongo_db():
-    if not MONGO_OK:
-        return None
-    try:
-        uri = st.secrets["MONGO_URI"]
-        client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=3000)
-        client.server_info()
-        return client["finance_tracker"]
-    except:
-        return None
-
-def mongo_register(username, password):
-    db = get_mongo_db()
-    if db is None:
-        return False, "MongoDB not connected"
-    if db.users.find_one({"username": username}):
-        return False, "Username already exists"
-    db.users.insert_one({"username": username, "password": password})
-    return True, "Registered!"
-
-def mongo_login(username, password):
-    db = get_mongo_db()
-    if db is None:
-        return False, "MongoDB not connected"
-    user = db.users.find_one({"username": username, "password": password})
-    if user:
-        return True, "Login successful"
-    return False, "Invalid credentials"
-
-def mongo_save_expenses(username, df):
-    db = get_mongo_db()
-    if db is None:
-        return
-    records = df.copy()
-    records['Date'] = records['Date'].astype(str)
-    db.expenses.delete_many({"username": username})
-    docs = [{"username": username, **r} for r in records.to_dict("records")]
-    if docs:
-        db.expenses.insert_many(docs)
-
-def mongo_load_expenses(username):
-    db = get_mongo_db()
-    if db is None:
-        return None
-    docs = list(db.expenses.find({"username": username}, {"_id": 0, "username": 0}))
-    if not docs:
-        return None
-    df = pd.DataFrame(docs)
-    df['Date'] = pd.to_datetime(df['Date'])
-    return df
-
-# ══════════════════════════════════════════════════════════════════
-# 3. EXPENSE PREDICTION (ML)
+# 2. EXPENSE PREDICTION (ML)
 # ══════════════════════════════════════════════════════════════════
 def predict_next_month(df):
     if not SKLEARN_OK or len(df) < 3:
@@ -144,12 +81,11 @@ def predict_next_month(df):
     y = monthly_sum['Amount'].values
     model = LinearRegression()
     model.fit(X, y)
-    next_month_num = len(monthly_sum)
-    prediction = model.predict([[next_month_num]])[0]
+    prediction = model.predict([[len(monthly_sum)]])[0]
     return max(0, round(prediction))
 
 # ══════════════════════════════════════════════════════════════════
-# 4. RECEIPT SCANNER (OCR via Gemini Vision)
+# 3. RECEIPT SCANNER (Gemini Vision)
 # ══════════════════════════════════════════════════════════════════
 def scan_receipt_with_gemini(image_bytes, mime_type):
     try:
@@ -158,45 +94,94 @@ def scan_receipt_with_gemini(image_bytes, mime_type):
         return None, "⚠️ GEMINI_API_KEY not found"
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={API_KEY}"
     b64 = base64.b64encode(image_bytes).decode()
-    prompt = """You are a receipt OCR assistant. Extract ALL expense items from this receipt image.
-    Return ONLY a JSON array like this (no markdown, no explanation):
-    [{"description": "Item name", "amount": 250, "category": "Food"},...]
-    Categories must be one of: Food, Transport, Shopping, Entertainment, Bills, Education, Health, Other.
-    If you cannot read the receipt clearly, return an empty array: []"""
+    prompt = """Look at this receipt image and extract all items/expenses.
+
+You MUST respond with ONLY a valid JSON array. No explanation, no markdown, no extra text.
+Each object must have exactly these 3 keys: description, amount, category.
+Amount must be a number (no currency symbols).
+Category must be one of: Food, Transport, Shopping, Entertainment, Bills, Education, Health, Other.
+
+Example of valid response:
+[{"description":"Coffee","amount":80,"category":"Food"},{"description":"Bus ticket","amount":30,"category":"Transport"}]
+
+If the image is not a receipt or unreadable, respond with exactly: []
+
+IMPORTANT: Return raw JSON only. No ```json``` tags. No newlines inside strings."""
+
     data = {
-        "contents": [{
-            "parts": [
-                {"inline_data": {"mime_type": mime_type, "data": b64}},
-                {"text": prompt}
-            ]
-        }],
-        "generationConfig": {"maxOutputTokens": 500, "temperature": 0.1}
+        "contents": [{"parts": [
+            {"inline_data": {"mime_type": mime_type, "data": b64}},
+            {"text": prompt}
+        ]}],
+        "generationConfig": {"maxOutputTokens": 1000, "temperature": 0.0}
     }
     try:
         response = requests.post(url, json=data, timeout=20)
-        if response.status_code == 200:
-            raw = response.json()['candidates'][0]['content']['parts'][0]['text']
-            raw = raw.strip().replace("```json", "").replace("```", "").strip()
-            import json
-            items = json.loads(raw)
-            return items, None
-        return None, f"⚠️ Error {response.status_code}"
+        if response.status_code != 200:
+            return None, f"⚠️ API Error {response.status_code}: {response.text[:200]}"
+
+        raw = response.json()['candidates'][0]['content']['parts'][0]['text']
+
+        # Clean up common Gemini response issues
+        raw = raw.strip()
+        raw = raw.replace("```json", "").replace("```JSON", "").replace("```", "")
+        raw = raw.strip()
+
+        # Extract just the JSON array if extra text exists
+        start = raw.find('[')
+        end   = raw.rfind(']')
+        if start != -1 and end != -1:
+            raw = raw[start:end+1]
+        else:
+            return None, f"⚠️ Could not find JSON array in response. AI said: {raw[:300]}"
+
+        # Fix common JSON issues: single quotes → double quotes
+        raw = raw.replace("'", '"')
+
+        # Remove trailing commas before ] or }
+        import re
+        raw = re.sub(r',\s*([}\]])', r'\1', raw)
+
+        items = json.loads(raw)
+
+        # Validate and clean each item
+        cleaned = []
+        valid_categories = ["Food", "Transport", "Shopping", "Entertainment", "Bills", "Education", "Health", "Other"]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            desc   = str(item.get('description') or item.get('name') or item.get('item') or 'Unknown')
+            amt    = item.get('amount') or item.get('price') or item.get('cost') or 0
+            cat    = item.get('category') or 'Other'
+            try:
+                amt = float(str(amt).replace('₹','').replace(',','').replace('Rs','').strip())
+            except:
+                amt = 0.0
+            if cat not in valid_categories:
+                cat = 'Other'
+            if amt > 0:
+                cleaned.append({'description': desc, 'amount': amt, 'category': cat})
+
+        return cleaned, None
+
+    except json.JSONDecodeError as e:
+        return None, f"⚠️ JSON parse error: {str(e)} | Raw response: {raw[:300]}"
     except Exception as e:
         return None, f"⚠️ Error: {str(e)}"
 
 # ══════════════════════════════════════════════════════════════════
-# 5. ANOMALY DETECTION
+# 4. ANOMALY DETECTION
 # ══════════════════════════════════════════════════════════════════
 def detect_anomalies(df):
     anomalies = []
     if len(df) < 5:
         return anomalies
     for category in df['Category'].unique():
-        cat_df = df[df['Category'] == category]['Amount']
-        if len(cat_df) < 3:
+        cat_amounts = df[df['Category'] == category]['Amount']
+        if len(cat_amounts) < 3:
             continue
-        mean = cat_df.mean()
-        std = cat_df.std()
+        mean = cat_amounts.mean()
+        std = cat_amounts.std()
         if std == 0:
             continue
         for _, row in df[df['Category'] == category].iterrows():
@@ -212,9 +197,9 @@ def detect_anomalies(df):
     return anomalies
 
 # ══════════════════════════════════════════════════════════════════
-# 6. PDF REPORT GENERATOR
+# 5. PDF REPORT
 # ══════════════════════════════════════════════════════════════════
-def generate_pdf_report(df, budget, username="User"):
+def generate_pdf_report(df, budget):
     if not REPORTLAB_OK:
         return None
     buffer = io.BytesIO()
@@ -223,34 +208,34 @@ def generate_pdf_report(df, budget, username="User"):
     story = []
 
     title_style = ParagraphStyle('title', parent=styles['Title'], fontSize=20, textColor=colors.HexColor('#1a1a2e'))
-    sub_style = ParagraphStyle('sub', parent=styles['Normal'], fontSize=10, textColor=colors.grey)
-    head_style = ParagraphStyle('head', parent=styles['Heading2'], fontSize=13, textColor=colors.HexColor('#16213e'))
+    sub_style   = ParagraphStyle('sub',   parent=styles['Normal'], fontSize=10, textColor=colors.grey)
+    head_style  = ParagraphStyle('head',  parent=styles['Heading2'], fontSize=13, textColor=colors.HexColor('#16213e'))
 
     story.append(Paragraph("💰 Finance Tracker — Monthly Report", title_style))
-    story.append(Paragraph(f"Generated for: {username} | Date: {datetime.now().strftime('%d %B %Y')}", sub_style))
+    story.append(Paragraph(f"Date: {datetime.now().strftime('%d %B %Y')}", sub_style))
     story.append(Spacer(1, 0.2*inch))
 
-    # Summary table
-    total = df['Amount'].sum()
+    total    = df['Amount'].sum()
     remaining = budget - total
-    days = max((df['Date'].max() - df['Date'].min()).days + 1, 1)
+    days     = max((df['Date'].max() - df['Date'].min()).days + 1, 1)
+
     summary_data = [
         ["Metric", "Value"],
-        ["Total Spent", f"Rs. {total:,.0f}"],
-        ["Monthly Budget", f"Rs. {budget:,.0f}"],
-        ["Remaining", f"Rs. {remaining:,.0f}"],
-        ["Daily Average", f"Rs. {total/days:.0f}"],
-        ["Total Transactions", str(len(df))],
-        ["Categories Used", str(df['Category'].nunique())],
+        ["Total Spent",       f"Rs. {total:,.0f}"],
+        ["Monthly Budget",    f"Rs. {budget:,.0f}"],
+        ["Remaining",         f"Rs. {remaining:,.0f}"],
+        ["Daily Average",     f"Rs. {total/days:.0f}"],
+        ["Total Transactions",str(len(df))],
+        ["Categories Used",   str(df['Category'].nunique())],
     ]
     t = Table(summary_data, colWidths=[3*inch, 3*inch])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#16213e')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('TEXTCOLOR',  (0,0), (-1,0), colors.white),
+        ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor('#f8f9fa'), colors.white]),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
-        ('FONTSIZE', (0,0), (-1,-1), 10),
+        ('GRID',   (0,0), (-1,-1), 0.5, colors.lightgrey),
+        ('FONTSIZE',(0,0), (-1,-1), 10),
         ('PADDING', (0,0), (-1,-1), 8),
     ]))
     story.append(Paragraph("📊 Summary", head_style))
@@ -269,11 +254,11 @@ def generate_pdf_report(df, budget, username="User"):
     t2 = Table(cat_data, colWidths=[2*inch, 2*inch, 1.5*inch, 1.5*inch])
     t2.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0f3460')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('TEXTCOLOR',  (0,0), (-1,0), colors.white),
+        ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor('#e8f4f8'), colors.white]),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
-        ('FONTSIZE', (0,0), (-1,-1), 10),
+        ('GRID',   (0,0), (-1,-1), 0.5, colors.lightgrey),
+        ('FONTSIZE',(0,0), (-1,-1), 10),
         ('PADDING', (0,0), (-1,-1), 7),
     ]))
     story.append(t2)
@@ -294,11 +279,11 @@ def generate_pdf_report(df, budget, username="User"):
     t3 = Table(tx_data, colWidths=[1.5*inch, 1.5*inch, 2.5*inch, 1.5*inch])
     t3.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#533483')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('TEXTCOLOR',  (0,0), (-1,0), colors.white),
+        ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor('#f3e8ff'), colors.white]),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('GRID',   (0,0), (-1,-1), 0.5, colors.lightgrey),
+        ('FONTSIZE',(0,0), (-1,-1), 9),
         ('PADDING', (0,0), (-1,-1), 6),
     ]))
     story.append(t3)
@@ -310,62 +295,10 @@ def generate_pdf_report(df, budget, username="User"):
     return buffer.read()
 
 # ══════════════════════════════════════════════════════════════════
-# LOGIN PAGE
-# ══════════════════════════════════════════════════════════════════
-db_available = get_mongo_db() is not None
-
-if not st.session_state.logged_in:
-    st.title("💰 AI Finance Tracker")
-    st.markdown("### 🔐 Login / Register")
-
-    if not db_available:
-        st.warning("⚠️ MongoDB not connected — using Guest mode (data won't be saved across sessions). Add MONGO_URI to secrets to enable accounts.")
-        if st.button("Continue as Guest 👤"):
-            st.session_state.logged_in = True
-            st.session_state.username = "Guest"
-            st.rerun()
-        st.stop()
-
-    tab1, tab2 = st.tabs(["🔑 Login", "📝 Register"])
-    with tab1:
-        with st.form("login_form"):
-            lu = st.text_input("Username")
-            lp = st.text_input("Password", type="password")
-            if st.form_submit_button("Login", type="primary"):
-                ok, msg = mongo_login(lu, lp)
-                if ok:
-                    st.session_state.logged_in = True
-                    st.session_state.username = lu
-                    loaded = mongo_load_expenses(lu)
-                    if loaded is not None:
-                        st.session_state.expenses = loaded
-                    st.success(f"Welcome back, {lu}!")
-                    st.rerun()
-                else:
-                    st.error(msg)
-    with tab2:
-        with st.form("register_form"):
-            ru = st.text_input("Choose Username")
-            rp = st.text_input("Choose Password", type="password")
-            rp2 = st.text_input("Confirm Password", type="password")
-            if st.form_submit_button("Register", type="primary"):
-                if rp != rp2:
-                    st.error("Passwords don't match!")
-                elif len(ru) < 3:
-                    st.error("Username must be at least 3 characters")
-                else:
-                    ok, msg = mongo_register(ru, rp)
-                    if ok:
-                        st.success("✅ Registered! Please login.")
-                    else:
-                        st.error(msg)
-    st.stop()
-
-# ══════════════════════════════════════════════════════════════════
-# MAIN APP (after login)
+# MAIN APP
 # ══════════════════════════════════════════════════════════════════
 st.title("💰 AI-Powered Finance Tracker")
-st.markdown(f"Welcome, **{st.session_state.username}** 👋 | Track expenses and get AI insights!")
+st.markdown("Track expenses and get AI-powered insights!")
 st.markdown("---")
 
 # ── SIDEBAR ───────────────────────────────────────────────────────
@@ -379,7 +312,7 @@ with st.sidebar:
     )
     st.markdown("---")
     with st.form("add_expense"):
-        exp_date = st.date_input("Date", datetime.now())
+        exp_date     = st.date_input("Date", datetime.now())
         exp_category = st.selectbox("Category", ["Food", "Transport", "Shopping", "Entertainment", "Bills", "Education", "Health", "Other"])
         amount_method = st.radio("Amount input:", ["Quick Select", "Type Exact"], horizontal=True, label_visibility="collapsed")
         if amount_method == "Quick Select":
@@ -388,31 +321,26 @@ with st.sidebar:
             exp_amount = st.number_input("Amount (₹)", min_value=0, value=100, step=1)
         exp_desc = st.text_input("Description")
         if st.form_submit_button("Add Expense"):
-            new_row = pd.DataFrame({'Date': [pd.to_datetime(exp_date)], 'Category': [exp_category], 'Amount': [exp_amount], 'Description': [exp_desc]})
+            new_row = pd.DataFrame({
+                'Date':        [pd.to_datetime(exp_date)],
+                'Category':    [exp_category],
+                'Amount':      [exp_amount],
+                'Description': [exp_desc]
+            })
             st.session_state.expenses = pd.concat([st.session_state.expenses, new_row], ignore_index=True)
-            if db_available and st.session_state.username != "Guest":
-                mongo_save_expenses(st.session_state.username, st.session_state.expenses)
             st.success(f"✅ Added: {exp_desc} - ₹{exp_amount}")
     st.markdown("---")
     if st.button("🗑️ Clear All Data"):
         st.session_state.expenses = pd.DataFrame(columns=['Date', 'Category', 'Amount', 'Description'])
-        st.session_state.chat_history = []
+        st.session_state.chat_history   = []
         st.session_state.latest_response = None
         st.session_state.latest_question = None
-        if db_available and st.session_state.username != "Guest":
-            mongo_save_expenses(st.session_state.username, st.session_state.expenses)
         st.success("✅ All data cleared!")
-    st.markdown("---")
-    if st.button("🚪 Logout"):
-        for key in ['logged_in', 'username', 'chat_history', 'latest_response', 'latest_question']:
-            st.session_state[key] = None if 'response' in key or 'question' in key else False if key == 'logged_in' else ""
-        st.session_state.chat_history = []
-        st.rerun()
 
 df = st.session_state.expenses
 
 # ══════════════════════════════════════════════════════════════════
-# SECTION: AI ADVISOR
+# AI ADVISOR
 # ══════════════════════════════════════════════════════════════════
 st.subheader("🤖 Ask AI Financial Advisor")
 st.markdown("Get personalized advice based on your spending!")
@@ -425,30 +353,66 @@ with col2:
 
 if ask_button and user_question:
     with st.spinner("🤔 AI is analyzing..."):
-        total = df['Amount'].sum()
+        total           = df['Amount'].sum()
         category_totals = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
-        top_category = category_totals.index[0]
-        top_category_amount = category_totals.values[0]
-        top_category_percentage = (top_category_amount / total * 100)
-        recent_df = df.sort_values('Date', ascending=False).head(5)
-        recent_text = ", ".join([f"{r['Category']}: ₹{r['Amount']}" for _, r in recent_df.iterrows()])
-        days_tracked = max((df['Date'].max() - df['Date'].min()).days + 1, 1)
-        daily_avg = total / days_tracked
-        category_list = ", ".join([f"{cat}: ₹{amt:.0f} ({amt/total*100:.0f}%)" for cat, amt in category_totals.items()])
-        context = f"""You are a smart, friendly personal finance advisor for an Indian user.
-        Analyze their real expense data and give specific, actionable advice.
-        THEIR SPENDING DATA:
-        - Total spent: ₹{total:,.0f} over {days_tracked} days
-        - Daily average: ₹{daily_avg:.0f}/day
-        - Monthly estimate: ₹{daily_avg * 30:,.0f}/month
-        CATEGORY BREAKDOWN: {category_list}
-        RECENT TRANSACTIONS: {recent_text}
-        TOP SPENDING AREA: {top_category} at ₹{top_category_amount:.0f} ({top_category_percentage:.0f}% of total)
-        INSTRUCTIONS:
-        - Give specific advice using their EXACT numbers
-        - If they ask for tips, give 3-4 numbered actionable tips with real ₹ amounts
-        - Always end with one motivational next step
-        - Use ₹ symbol for all amounts and emojis to make it readable"""
+        top_category    = category_totals.index[0]
+        top_amt         = category_totals.values[0]
+        top_pct         = (top_amt / total * 100)
+        days_tracked    = max((df['Date'].max() - df['Date'].min()).days + 1, 1)
+        daily_avg       = total / days_tracked
+        monthly_budget  = st.session_state.monthly_budget
+        remaining       = monthly_budget - total
+
+        # Full category breakdown as numbered list
+        cat_lines = "\n".join([
+            f"  {i+1}. {cat}: ₹{amt:,.0f} ({amt/total*100:.1f}%)"
+            for i, (cat, amt) in enumerate(category_totals.items())
+        ])
+
+        # All transactions as a table string
+        tx_lines = "\n".join([
+            f"  {row['Date'].strftime('%d-%b')}: {row['Category']} | {row['Description']} | ₹{row['Amount']:,.0f}"
+            for _, row in df.sort_values('Date', ascending=False).iterrows()
+        ])
+
+        # Single transaction max
+        max_tx = df.loc[df['Amount'].idxmax()]
+        min_tx = df.loc[df['Amount'].idxmin()]
+
+        context = f"""You are a strict personal finance data analyst for an Indian user.
+You have access to their EXACT expense data. ONLY answer based on this data. NEVER say "I don't have enough data" or give generic advice. Always use the EXACT numbers below.
+
+=== USER EXPENSE DATA ===
+Monthly Budget: ₹{monthly_budget:,.0f}
+Total Spent: ₹{total:,.0f}
+Remaining Budget: ₹{remaining:,.0f}
+Days Tracked: {days_tracked}
+Daily Average: ₹{daily_avg:.0f}/day
+Projected Monthly Spend: ₹{daily_avg*30:,.0f}
+Total Transactions: {len(df)}
+
+=== CATEGORY-WISE SPENDING (Highest to Lowest) ===
+{cat_lines}
+
+=== HIGHEST SINGLE EXPENSE ===
+  Category: {max_tx['Category']} | Description: {max_tx['Description']} | Amount: ₹{max_tx['Amount']:,.0f} | Date: {max_tx['Date'].strftime('%d-%b-%Y')}
+
+=== LOWEST SINGLE EXPENSE ===
+  Category: {min_tx['Category']} | Description: {min_tx['Description']} | Amount: ₹{min_tx['Amount']:,.0f} | Date: {min_tx['Date'].strftime('%d-%b-%Y')}
+
+=== ALL TRANSACTIONS (Recent First) ===
+{tx_lines}
+
+=== STRICT RULES FOR YOUR RESPONSE ===
+- NEVER start with greetings like "Hey!", "Hi!", "Thanks for reaching out"
+- NEVER say "I don't have data" — the full data is given above
+- ALWAYS start your answer directly with the facts from the data
+- Use EXACT ₹ numbers from the data in every sentence
+- If asked about highest spending: state the category name and exact amount immediately
+- If asked for tips: give numbered tips with real ₹ savings amounts
+- Keep response under 150 words, precise and to the point
+- Use emojis only to highlight numbers, not as filler"""
+
         ai_response = ask_ai(user_question, context)
         st.session_state.chat_history.append({'user': user_question, 'ai': ai_response})
         st.session_state.latest_response = ai_response
@@ -475,11 +439,11 @@ if len(df) > 0:
     st.subheader("📈 Key Metrics")
     col1, col2, col3, col4, col5 = st.columns(5)
     remaining_budget = st.session_state.monthly_budget - df['Amount'].sum()
-    col1.metric("💵 Total Spent", f"₹{df['Amount'].sum():,.0f}")
-    col2.metric("📊 Avg Transaction", f"₹{df['Amount'].mean():,.0f}")
-    col3.metric("📈 Highest", f"₹{df['Amount'].max():,.0f}")
-    col4.metric("🔢 Entries", len(df))
-    col5.metric("🎯 Remaining", f"₹{remaining_budget:,.0f}")
+    col1.metric("💵 Total Spent",      f"₹{df['Amount'].sum():,.0f}")
+    col2.metric("📊 Avg Transaction",  f"₹{df['Amount'].mean():,.0f}")
+    col3.metric("📈 Highest",          f"₹{df['Amount'].max():,.0f}")
+    col4.metric("🔢 Entries",          len(df))
+    col5.metric("🎯 Remaining",        f"₹{remaining_budget:,.0f}")
 
     spent = df['Amount'].sum()
     usage = min(spent / st.session_state.monthly_budget, 1.0)
@@ -498,48 +462,43 @@ if len(df) > 0:
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("📊 Spending by Category")
-        category_data = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
-        st.bar_chart(category_data)
+        st.bar_chart(df.groupby('Category')['Amount'].sum().sort_values(ascending=False))
     with col2:
         st.subheader("📈 Daily Trend")
-        daily = df.groupby('Date')['Amount'].sum()
-        st.line_chart(daily)
+        st.line_chart(df.groupby('Date')['Amount'].sum())
 
     st.markdown("---")
 
     # ── CATEGORY SUMMARY ──────────────────────────────────────────
     st.subheader("💰 Category Summary")
-    category_summary = df.groupby('Category')['Amount'].sum().reset_index()
-    category_summary['Percentage'] = (category_summary['Amount'] / category_summary['Amount'].sum() * 100).round(1)
-    category_summary = category_summary.sort_values('Amount', ascending=False)
-    st.dataframe(category_summary, hide_index=True, use_container_width=True)
+    cat_sum = df.groupby('Category')['Amount'].sum().reset_index()
+    cat_sum['Percentage'] = (cat_sum['Amount'] / cat_sum['Amount'].sum() * 100).round(1)
+    st.dataframe(cat_sum.sort_values('Amount', ascending=False), hide_index=True, use_container_width=True)
 
     st.markdown("---")
 
     # ── EXPENSE PREDICTION (ML) ───────────────────────────────────
     st.subheader("🤖 Expense Prediction (ML)")
     if not SKLEARN_OK:
-        st.info("📦 Install scikit-learn to enable predictions: `pip install scikit-learn`")
+        st.info("📦 Add `scikit-learn` to requirements.txt to enable predictions")
     else:
         predicted = predict_next_month(df)
         if predicted is None:
             st.info("📊 Add expenses across at least 2 months to get predictions.")
         else:
             col1, col2, col3 = st.columns(3)
-            days_left = max((df['Date'].max() - df['Date'].min()).days + 1, 1)
-            daily_avg_pred = df['Amount'].sum() / days_left
+            days_left    = max((df['Date'].max() - df['Date'].min()).days + 1, 1)
+            daily_avg_p  = df['Amount'].sum() / days_left
             col1.metric("📅 Predicted Next Month", f"₹{predicted:,.0f}")
-            col2.metric("📉 Daily Average", f"₹{daily_avg_pred:.0f}")
-            col3.metric("💡 Budget Gap", f"₹{st.session_state.monthly_budget - predicted:,.0f}")
+            col2.metric("📉 Daily Average",         f"₹{daily_avg_p:.0f}")
+            col3.metric("💡 Budget Gap",             f"₹{st.session_state.monthly_budget - predicted:,.0f}")
             if predicted > st.session_state.monthly_budget:
                 st.error(f"🚨 ML predicts you'll exceed budget by ₹{predicted - st.session_state.monthly_budget:,.0f} next month!")
             else:
-                st.success(f"✅ ML predicts you'll stay within budget next month. Good job!")
-
+                st.success("✅ ML predicts you'll stay within budget next month. Good job!")
             monthly_chart = df.copy()
             monthly_chart['Month'] = monthly_chart['Date'].dt.to_period('M').astype(str)
-            monthly_chart = monthly_chart.groupby('Month')['Amount'].sum().reset_index()
-            st.line_chart(monthly_chart.set_index('Month'))
+            st.line_chart(monthly_chart.groupby('Month')['Amount'].sum())
 
     st.markdown("---")
 
@@ -552,31 +511,18 @@ if len(df) > 0:
         if st.button("🔍 Scan & Extract Expenses", type="primary"):
             with st.spinner("🤖 AI is reading your receipt..."):
                 image_bytes = uploaded_receipt.read()
-                mime_type = uploaded_receipt.type
-                items, error = scan_receipt_with_gemini(image_bytes, mime_type)
+                items, error = scan_receipt_with_gemini(image_bytes, uploaded_receipt.type)
                 if error:
                     st.error(error)
                 elif not items:
                     st.warning("⚠️ Could not extract any items. Try a clearer image.")
                 else:
                     st.success(f"✅ Found {len(items)} item(s)!")
-                    preview_df = pd.DataFrame(items)
-                    st.dataframe(preview_df, hide_index=True, use_container_width=True)
-                    new_rows = []
-                    for item in items:
-                        new_rows.append({
-                            'Date': pd.to_datetime(datetime.now().date()),
-                            'Category': item.get('category', 'Other'),
-                            'Amount': float(item.get('amount', 0)),
-                            'Description': item.get('description', '')
-                        })
-                    if new_rows:
-                        new_df = pd.DataFrame(new_rows)
-                        st.session_state.expenses = pd.concat([st.session_state.expenses, new_df], ignore_index=True)
-                        if db_available and st.session_state.username != "Guest":
-                            mongo_save_expenses(st.session_state.username, st.session_state.expenses)
-                        st.success(f"✅ {len(new_rows)} expense(s) added automatically!")
-                        st.rerun()
+                    st.dataframe(pd.DataFrame(items), hide_index=True, use_container_width=True)
+                    new_rows = [{'Date': pd.to_datetime(datetime.now().date()), 'Category': i.get('category', 'Other'), 'Amount': float(i.get('amount', 0)), 'Description': i.get('description', '')} for i in items]
+                    st.session_state.expenses = pd.concat([st.session_state.expenses, pd.DataFrame(new_rows)], ignore_index=True)
+                    st.success(f"✅ {len(new_rows)} expense(s) added automatically!")
+                    st.rerun()
 
     st.markdown("---")
 
@@ -588,10 +534,7 @@ if len(df) > 0:
     else:
         st.error(f"⚠️ {len(anomalies)} unusual expense(s) detected!")
         for a in anomalies:
-            st.warning(
-                f"🚨 **{a['Category']}** on {a['Date']} — ₹{a['Amount']:,.0f} "
-                f"(your avg is ₹{a['Avg']:,.0f}, this is {a['ZScore']}x higher than normal)"
-            )
+            st.warning(f"🚨 **{a['Category']}** on {a['Date']} — ₹{a['Amount']:,.0f} (your avg is ₹{a['Avg']:,.0f}, this is {a['ZScore']}x higher than normal)")
 
     st.markdown("---")
 
@@ -599,33 +542,28 @@ if len(df) > 0:
     st.subheader("🔔 Smart Alerts")
     alerts = []
     category_totals = df.groupby('Category')['Amount'].sum().sort_values(ascending=False)
-
     if len(df) >= 7:
-        df_sorted = df.sort_values('Date')
+        df_sorted   = df.sort_values('Date')
         recent_week = df_sorted.tail(7)['Amount'].sum()
         if len(df) >= 14:
-            previous_week = df_sorted.iloc[-14:-7]['Amount'].sum()
-            if previous_week > 0:
-                change = ((recent_week - previous_week) / previous_week) * 100
+            prev_week = df_sorted.iloc[-14:-7]['Amount'].sum()
+            if prev_week > 0:
+                change = ((recent_week - prev_week) / prev_week) * 100
                 if change > 20:
                     alerts.append(("warning", f"🚨 Spending UP {change:.1f}% this week!"))
                 elif change < -20:
                     alerts.append(("success", f"✅ Spending DOWN {abs(change):.1f}% this week!"))
-
-    top_category = category_totals.index[0]
-    top_amount = category_totals.values[0]
-    percentage = (top_amount / df['Amount'].sum()) * 100
-    if percentage > 35:
-        alerts.append(("info", f"💡 {top_category} is {percentage:.1f}% of your spending"))
-
-    days = max((df['Date'].max() - df['Date'].min()).days + 1, 1)
+    top_cat = category_totals.index[0]
+    top_amt = category_totals.values[0]
+    pct     = (top_amt / df['Amount'].sum()) * 100
+    if pct > 35:
+        alerts.append(("info", f"💡 {top_cat} is {pct:.1f}% of your spending"))
+    days      = max((df['Date'].max() - df['Date'].min()).days + 1, 1)
     daily_avg = df['Amount'].sum() / days
     alerts.append(("info", f"🎯 Daily avg: ₹{daily_avg:.0f}"))
-
     freq = df['Category'].value_counts()
     if len(freq) > 0 and freq.values[0] >= 3:
         alerts.append(("info", f"📈 {freq.index[0]} appears {freq.values[0]} times"))
-
     for alert_type, message in alerts:
         if alert_type == "warning":
             st.warning(message)
@@ -641,9 +579,7 @@ if len(df) > 0:
     with col1:
         st.subheader("📋 All Transactions")
     with col2:
-        csv = df.to_csv(index=False)
-        st.download_button("📥 CSV", csv, "expenses.csv", "text/csv")
-
+        st.download_button("📥 CSV", df.to_csv(index=False), "expenses.csv", "text/csv")
     display_df = df.copy()
     display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
     st.dataframe(display_df.sort_values('Date', ascending=False), hide_index=True, use_container_width=True)
@@ -672,19 +608,18 @@ if len(df) > 0:
     # ── PDF REPORT ────────────────────────────────────────────────
     st.subheader("📄 Monthly PDF Report")
     if not REPORTLAB_OK:
-        st.info("📦 Install reportlab to enable PDF reports: `pip install reportlab`")
+        st.info("📦 Add `reportlab` to requirements.txt to enable PDF reports")
     else:
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.markdown("Download a full report with charts, category breakdown, and AI recommendations.")
+            st.markdown("Download a full report with summary, category breakdown & recent transactions.")
         with col2:
-            pdf_bytes = generate_pdf_report(df, st.session_state.monthly_budget, st.session_state.username)
+            pdf_bytes = generate_pdf_report(df, st.session_state.monthly_budget)
             if pdf_bytes:
-                month_name = datetime.now().strftime("%B_%Y")
                 st.download_button(
                     label="📥 Download PDF",
                     data=pdf_bytes,
-                    file_name=f"Finance_Report_{month_name}.pdf",
+                    file_name=f"Finance_Report_{datetime.now().strftime('%B_%Y')}.pdf",
                     mime="application/pdf",
                     type="primary"
                 )
