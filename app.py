@@ -181,17 +181,17 @@ if len(df) > 0:
     spent = df['Amount'].sum()
     usage = min(spent / monthly_budget, 1.0)
 
-     st.write(
-         f"💰 Budget Usage: ₹{spent:,.0f} / ₹{monthly_budget:,.0f}"
-)
+    st.write(
+        f"💰 Budget Usage: ₹{spent:,.0f} / ₹{monthly_budget:,.0f}"
+    )
 
     st.progress(usage)
     if spent > monthly_budget:
-    st.error("🚨 Budget Exceeded!")
-elif spent > monthly_budget * 0.8:
-    st.warning("⚠️ More than 80% of budget used")
-else:
-    st.success("✅ Budget under control")
+        st.error("🚨 Budget Exceeded!")
+    elif spent > monthly_budget * 0.8:
+        st.warning("⚠️ More than 80% of budget used")
+    else:
+        st.success("✅ Budget under control")
     
     st.markdown("---")
     
