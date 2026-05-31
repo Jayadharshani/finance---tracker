@@ -2,6 +2,5 @@ streamlit
 pandas
 numpy
 requests
-scikit-learn
-pymongo
-reportlab
+scikit-learn==1.5.2
+reportlab==4.2.2
