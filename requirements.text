@@ -1,7 +1,7 @@
 streamlit
 pandas
-request 
-matplotlib
+numpy
+requests
 scikit-learn
 pymongo
 reportlab
